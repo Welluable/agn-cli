@@ -1,7 +1,7 @@
 import type { Provider, Message, ChatResponse } from './types.js'
 import { DEFAULT_TOOLS, TOOL_HANDLERS } from './tools.js'
 
-const SYSTEM_PROMPT = `You are a helpful coding agent. Assist the user with their request.`
+const SYSTEM_PROMPT = `You are a helpful general purpose agent. Assist the user with their request.`
 
 export interface AgentHooks {
   onToolCall?: (name: string, args: Record<string, unknown>) => void
