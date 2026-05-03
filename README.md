@@ -19,6 +19,18 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 - **Terminal renderer hooks** that stream assistant text and print tool call/result summaries.
 - **Config resolution** from environment variables and `~/.agn/config.yml`.
 
+## Future plans
+
+Planned features and areas of exploration include:
+
+- **Additional providers**, starting with Anthropic support in the CLI/runtime path.
+- **Optional confirmation mode** for approving file writes, patches, and shell commands before they run.
+- **Sandbox mode** for executing tasks in an isolated disposable environment and reviewing a diff before applying changes.
+- **Skills** loaded from markdown files in global and project-level `.agn/skills/` directories to teach project conventions without a plugin system.
+- **Pipe/stdin mode** so prompts and input can be composed with standard Unix tools.
+- **Structured output** support for JSON-schema-like results that scripts can parse and branch on reliably.
+- **Improved orchestration examples** for CI, cron jobs, git hooks, migrations, and multi-step workflows.
+
 ## Installation
 
 ```bash

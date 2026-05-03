@@ -27,7 +27,7 @@
     "example": "tsx --env-file=.env",
     "prepublishOnly": "npm run build",
     "publish": "./dist/cli.js 'bump the npm version and publish' ",
-    "push": "./dist/cli.js 'commit in commitzen style andpush the latest version to the remote repository' "
+    "push": "./dist/cli.js 'commit in detail andpush the latest version to the remote repository' "
   },
   "keywords": [
     "ai",
