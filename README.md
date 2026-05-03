@@ -1,20 +1,23 @@
 # agn-cli
 
-A small, inspectable coding agent for the terminal and for TypeScript programs.
+A small, inspectable coding agent for the terminal and for TypeScript/JavaScript programs.
 
-`agn` takes one prompt, calls an LLM, lets the model use four built-in tools, and exits. The goal is to keep the agent primitive simple enough to understand: a loop, a provider, and tools for reading, writing, patching, and running shell commands.
+`agn` runs a single prompt, calls an LLM provider, lets the model use the built-in tools, and exits. The implemented agent is intentionally simple: a message loop, an OpenAI provider, terminal rendering hooks, config loading, and tools for files and shell commands.
 
 > **Yolo by design:** `agn` can read files, write files, patch files, and execute shell commands without confirmation prompts. Run it only in directories and environments where that is acceptable.
 
-## Features
+## Implemented functionality
 
-- **Simple agent loop** — LLM response → tool calls → tool results → repeat until done.
-- **Terminal CLI** — run one task from your shell with `agn "..."`.
-- **Programmatic API** — import `Agent` and `OpenAIProvider` in TypeScript/JavaScript.
-- **Built-in tools** — `read_file`, `write_file`, `patch`, and `shell`.
-- **Streaming text output** — provider text deltas can stream to the terminal via hooks.
-- **OpenAI provider** — OpenAI chat completions with tool calling support.
-- **Small codebase** — intended to be easy to read, fork, and modify.
+- **Single-task CLI** with `agn "<prompt>"`.
+- **Interactive config setup** with `agn init`.
+- **Model override flag** with `--model <id>`.
+- **Help and version flags** with `--help`, `-h`, `--version`, and `-v`.
+- **Programmatic API** exporting `Agent`, `OpenAIProvider`, and shared TypeScript types.
+- **Agent loop** that sends messages to a provider, executes requested tool calls, appends tool results, and repeats until the provider returns no tool calls or the max iteration count is reached.
+- **Built-in tools**: `read_file`, `write_file`, `patch`, and `shell`.
+- **OpenAI chat completions provider** with streaming response handling and function/tool-call support.
+- **Terminal renderer hooks** that stream assistant text and print tool call/result summaries.
+- **Config resolution** from environment variables and `~/.agn/config.yml`.
 
 ## Installation
 
@@ -22,7 +25,7 @@ A small, inspectable coding agent for the terminal and for TypeScript programs.
 npm install -g @welluable/agn-cli
 ```
 
-Or run it without installing globally:
+Or run without installing globally:
 
 ```bash
 npx @welluable/agn-cli "list the files in this project"
@@ -32,7 +35,7 @@ Requires Node.js 18 or newer.
 
 ## Quick start
 
-Configure your API key and default model:
+Configure provider settings:
 
 ```bash
 agn init
@@ -44,22 +47,49 @@ Then run a task:
 agn "find all TODO comments and summarize them by file"
 ```
 
-Override the model for a single run:
+Override the configured/default model for one run:
 
 ```bash
-agn --model gpt-4.1-mini "add a .gitignore for a Node project"
+agn --model gpt-4.1-mini "read package.json and explain the scripts"
 ```
 
-Show help/version:
+Show help or version:
 
 ```bash
 agn --help
 agn --version
 ```
 
+## CLI usage
+
+```text
+agn [init] [--model <id>] "<prompt>"
+agn init
+agn --help
+agn --version
+```
+
+Examples:
+
+```bash
+agn "rename all .jpeg files in this folder to .jpg"
+agn "run npm test and fix any failures"
+agn "read package.json and explain the available scripts"
+agn "curl https://example.com/health and tell me the status"
+```
+
+The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output.
+
+Exit codes:
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | The agent finished with status `done`. |
+| `1` | Missing prompt/config/API key, unsupported provider, provider error, max iterations reached, or another runtime error. |
+
 ## Configuration
 
-`agn init` writes a config file to:
+`agn init` writes a YAML config file to:
 
 ```text
 ~/.agn/config.yml
@@ -73,38 +103,25 @@ model: gpt-4.1
 api_key: sk-...
 ```
 
-You can also configure it with environment variables:
+Environment variables are also supported:
 
 | Variable | Description |
 | --- | --- |
 | `AGN_PROVIDER` | Provider name. Currently only `openai` is implemented. |
 | `AGN_MODEL` | Default model identifier. |
-| `AGN_API_KEY` | API key used by the provider. |
+| `AGN_API_KEY` | API key passed to the provider. |
 
-Resolution order:
+Resolution order implemented by the CLI:
 
-1. CLI flags, for example `--model`
-2. Environment variables
-3. `~/.agn/config.yml`
-4. Built-in defaults
-
-> Note: the init flow includes an Anthropic option, but the current CLI implementation only creates the OpenAI provider. Anthropic support is planned, not implemented.
-
-## CLI usage
-
-```bash
-agn "rename all .jpeg files in this folder to .jpg"
-agn "run npm test and fix any failures"
-agn "read package.json and explain the available scripts"
-agn "curl https://example.com/health and tell me the status"
-```
-
-The CLI streams assistant text and displays tool calls as they happen. A task exits with:
-
-| Exit code | Meaning |
+| Setting | Resolution order |
 | --- | --- |
-| `0` | Completed successfully. |
-| `1` | Failed, hit max iterations, missing config/API key, or provider error. |
+| Provider | `AGN_PROVIDER` → `~/.agn/config.yml` → `openai` |
+| Model | `--model` → `AGN_MODEL` → `~/.agn/config.yml` → `gpt-4.1` |
+| API key | `AGN_API_KEY` → `~/.agn/config.yml` |
+
+If no API key is resolved, the CLI exits with an error.
+
+`agn init` displays OpenAI and Anthropic choices and can write either provider name to the config file. The current run path only constructs an OpenAI provider; any other provider value exits with “Provider \"...\" is not implemented yet.”
 
 ## Programmatic usage
 
@@ -129,7 +146,15 @@ console.log(result.status)
 console.log(result.iterations)
 ```
 
-`agent.run()` returns:
+`agent.run()` accepts a prompt and an optional max-iteration override:
+
+```ts
+const result = await agent.run('migrate the small utility files to TypeScript', {
+  maxIterations: 50,
+})
+```
+
+It returns:
 
 ```ts
 interface RunResult {
@@ -140,34 +165,63 @@ interface RunResult {
 }
 ```
 
-You can raise the loop limit for larger tasks:
+### Agent hooks
+
+The `Agent` constructor accepts these optional hooks:
 
 ```ts
-await agent.run('migrate the small utility files to TypeScript', {
-  maxIterations: 50,
+interface AgentHooks {
+  onToolCall?: (name: string, args: Record<string, unknown>) => void
+  onToolResult?: (name: string, result: string) => void
+  onText?: (delta: string) => void
+  onIterationStart?: (index: number) => void
+  onIterationEnd?: (index: number) => void
+}
+```
+
+### OpenAIProvider options
+
+```ts
+new OpenAIProvider({
+  apiKey: 'sk-...',
+  model: 'gpt-4.1-mini',
+  baseUrl: 'https://example-compatible-endpoint/v1', // optional
 })
 ```
 
+`baseUrl` is optional and is passed to the OpenAI SDK as `baseURL`.
+
 ## How it works
 
-The core loop lives in `src/agent.ts`:
+The core loop is implemented in `src/agent.ts`:
 
-1. Start with a system message and the user prompt.
-2. Call `provider.chat(messages, tools)`.
+1. Start a new message list with a fixed system prompt and the user prompt.
+2. Call `provider.chat(messages, DEFAULT_TOOLS, { onText })`.
 3. Append the assistant response to the message history.
-4. If the model requested tool calls, execute them and append tool results.
-5. Repeat until the model returns no tool calls or the max iteration limit is reached.
+4. If the assistant requested tool calls, execute those tool calls.
+5. Append each tool result as a `tool` message.
+6. Repeat until no tool calls are returned, an error occurs, or `maxIterations` is reached.
 
-The default toolset lives in `src/tools.ts`:
+Tool calls returned in the same assistant response are executed concurrently with `Promise.all`.
 
-| Tool | What it does |
-| --- | --- |
-| `read_file` | Reads a UTF-8 file. |
-| `write_file` | Creates/overwrites a UTF-8 file, creating parent directories as needed. |
-| `patch` | Replaces an exact string in an existing file. |
-| `shell` | Runs a shell command and returns stdout/stderr. |
+The default maximum iteration count is `30`. Each call to `agent.run()` starts a fresh message history; conversation history is returned in the result but is not carried into later runs automatically.
 
-The provider interface lives in `src/types.ts`:
+## Built-in tools
+
+The default tool definitions and handlers are implemented in `src/tools.ts`.
+
+| Tool | Arguments | Implemented behavior |
+| --- | --- | --- |
+| `read_file` | `{ path }` | Reads a UTF-8 file and returns its contents, or an error string. |
+| `write_file` | `{ path, content }` | Creates parent directories as needed, writes UTF-8 content, overwrites existing files, and returns a byte-count message or error string. |
+| `patch` | `{ path, old_string, new_string }` | Reads a UTF-8 file, replaces the first exact occurrence of `old_string` with `new_string`, writes the updated file, and returns a status/error string. |
+| `shell` | `{ command }` | Runs `command` with Node's `child_process.exec` and returns stdout plus stderr, or the error message if there is no output. |
+
+These are the tools used by both the CLI-created agent and the exported `Agent` class.
+
+## Provider interface
+
+The shared provider interface is implemented in `src/types.ts`:
 
 ```ts
 interface Provider {
@@ -179,25 +233,26 @@ interface Provider {
 }
 ```
 
-This keeps model/API-specific code separate from the agent loop. The included implementation is `OpenAIProvider` in `src/providers/openai.ts`.
+The included provider implementation is `OpenAIProvider` in `src/providers/openai.ts`. It sends chat completion requests with `stream: true`, maps internal tool definitions to OpenAI function tools, accumulates streamed text deltas, assembles streamed tool-call chunks, and returns `{ content, tool_calls }`.
 
 ## Repository layout
 
 ```text
 src/
-  agent.ts             Agent loop and hooks
-  cli.ts               Command-line entrypoint
-  config.ts            Config/env resolution
-  init.ts              Interactive config setup
+  agent.ts             Agent loop, run result, hooks
+  cli.ts               Command-line entrypoint and argument parsing
+  config.ts            Config file/env/default resolution
+  init.ts              Interactive config writer
   providers/openai.ts  OpenAI provider implementation
   renderer.ts          Terminal rendering hooks
   tools.ts             Built-in tool definitions and handlers
   types.ts             Shared Provider/message/tool types
+  index.ts             Package exports
 
 docs/
-  Agent.md             Agent loop details
-  Cli.md               CLI behavior and examples
-  Provider.md          Provider interface details
+  Agent.md
+  Cli.md
+  Provider.md
 
 examples/
   openai.ts            Programmatic OpenAI example
@@ -241,41 +296,19 @@ OPENAI_API_KEY=sk-... npm run example -- examples/openai.ts
 ## Safety notes
 
 - `agn` does not ask before modifying files or running commands.
-- Prefer trying it in a clean git working tree so you can inspect/revert changes.
+- Prefer using it in a clean git working tree so you can inspect or revert changes.
 - Avoid running it with unnecessary credentials in the environment.
 - Do not commit API keys or local `.env` files.
-- The `shell` tool uses your system shell and inherits the permissions of the current process.
+- The `shell` tool uses your system shell through `child_process.exec` and inherits the permissions and environment of the current process.
 
-## Current limitations
+## Implemented limitations
 
-- Only the OpenAI provider is implemented.
-- No confirmation mode.
-- No sandbox mode.
-- No stdin/pipe mode.
-- No structured output mode.
-- No custom tool registration.
-- No conversation history between `run()` calls.
-
-Some of these ideas are explored in `docs/`, `idea.md`, and `complex.md`, but they should be treated as design notes unless the code implements them.
-
-## Contributing
-
-Contributions are welcome. A good contribution keeps the project easy to understand.
-
-Suggested workflow:
-
-1. Open an issue or discussion for larger changes.
-2. Keep pull requests focused and small.
-3. Run `npm run build` and `npm test` before submitting.
-4. Update docs/README examples when behavior changes.
-5. Avoid adding broad abstractions unless they simplify the codebase.
-
-Good first areas:
-
-- Provider improvements and additional providers.
-- Tests for the agent loop, tools, config resolution, and provider translation.
-- Safer execution options that remain easy to understand.
-- Documentation improvements and realistic examples.
+- The CLI can run only the OpenAI provider.
+- The built-in `Agent` uses the fixed default toolset from `src/tools.ts`.
+- There is no confirmation prompt before file writes, patches, or shell commands.
+- There is no sandboxing around shell commands or filesystem access.
+- The CLI accepts a prompt as command-line arguments; it does not read prompt text from stdin.
+- Each `agent.run()` call starts a new conversation.
 
 ## License
 
