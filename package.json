@@ -1,6 +1,6 @@
 {
   "name": "@welluable/agn-cli",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "description": "A yolo coding agent simple enough to fit in your head.",
   "author": "manojsinghnegi",
   "license": "MIT",
@@ -26,7 +26,6 @@
     "test:watch": "vitest",
     "example": "tsx --env-file=.env",
     "prepublishOnly": "npm run build",
-    "publish": "agn 'bump the npm version and publish' ",
     "push": "agn 'commit with a detailed message about what changes and push the latest version to the remote repository' "
   },
   "keywords": [
