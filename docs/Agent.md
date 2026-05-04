@@ -23,7 +23,7 @@ That's it. The agent is a `while` loop around a provider call.
 
 ### Step by step
 
-1. Build the initial message array: system prompt + user prompt
+1. Build the initial message array: system prompt (with skills index) + user prompt
 2. Call `provider.chat(messages, tools, { onText })` — the provider handles the LLM API
 3. Append the assistant's response to the message array
 4. If the response contains `tool_calls`, execute each one and append `{ role: 'tool', tool_call_id, content }` for every result
@@ -78,18 +78,19 @@ Agent returns the final text. `run()` resolves.
 
 ## Tool Execution
 
-The agent has 4 built-in tools: `read_file`, `write_file`, `patch`, `shell`. Each tool has two parts:
+The agent has 5 built-in tools: `read_file`, `write_file`, `patch`, `shell`, `read_skill`. Each tool has two parts:
 
 - **Definition** — JSON Schema that the LLM sees (name, description, parameters). This tells the model what tools exist and how to call them.
-- **Handler** — the actual function that runs when the tool is called. `read_file` calls `fs.readFile`, `shell` calls `child_process.exec`, etc.
+- **Handler** — the actual function that runs when the tool is called. `read_file` calls `fs.readFile`, `shell` calls `child_process.exec`, `read_skill` loads a skill by name, etc.
 
 The agent keeps a registry: a map from tool name to handler function.
 
 ```
-"read_file"  → (args) => fs.readFile(args.path)
-"write_file" → (args) => fs.writeFile(args.path, args.content)
-"patch"      → (args) => read, replace, write
-"shell"      → (args) => exec(args.command)
+"read_file"   → (args) => fs.readFile(args.path)
+"write_file"  → (args) => fs.writeFile(args.path, args.content)
+"patch"       → (args) => read, replace, write
+"shell"       → (args) => exec(args.command)
+"read_skill"  → (args) => load skill by name, return full content
 ```
 
 When the LLM returns tool calls, the agent:
@@ -104,11 +105,48 @@ Multiple tool calls in one response are executed in parallel with `Promise.all`.
 
 ### No custom tools
 
-The agent's toolset is fixed: `read_file`, `write_file`, `patch`, `shell`. You can't pass in additional tools. The constructor doesn't accept a `tools` option.
+The agent's toolset is fixed: `read_file`, `write_file`, `patch`, `shell`, `read_skill`. You can't pass in additional tools. The constructor doesn't accept a `tools` option.
 
-This is intentional. The 4 tools are general enough to do anything — read, write, edit, run commands. Adding more tools adds surface area the LLM has to reason about and more things that can go wrong.
+This is intentional. The 5 tools are general enough to do anything — read, write, edit, run commands, load domain knowledge. Adding more tools adds surface area the LLM has to reason about and more things that can go wrong.
 
-The way to extend the agent is **skills** — markdown files loaded into the system prompt that teach the model *how* to use the 4 tools for a specific domain. A skill doesn't give the agent new capabilities. It gives it better judgment about the capabilities it already has. See the Skills section in the CLI docs.
+The way to extend the agent is **skills** — markdown files that teach the model *how* to use the 5 tools for a specific domain. A skill doesn't give the agent new capabilities. It gives it better judgment about the capabilities it already has.
+
+## Skills
+
+Skills are markdown files (`SKILL.md`) that provide domain-specific knowledge to the agent. They live in two locations:
+
+- **Global**: `~/.agn/skills/` — available in every project
+- **Project**: `.agn/skills/` — project-specific, overrides global skills with the same directory name
+
+Each skill has YAML frontmatter with `name` and `description`, followed by markdown content.
+
+### Auto-discovery (default)
+
+When no `skills` option is passed to the constructor, the agent auto-discovers all available skills and builds an index for the system prompt. The LLM sees a list of available skills with descriptions and can load any of them at runtime using `read_skill`.
+
+```typescript
+const agent = new Agent({ provider })
+// System prompt includes: "Use read_skill to load a skill when it's relevant..."
+// followed by a list of discovered skills
+```
+
+### Explicit loading
+
+Pass skill names to pre-load them directly into the system prompt. The LLM gets the full skill content upfront without needing to call `read_skill`.
+
+```typescript
+const agent = new Agent({
+  provider,
+  skills: 'my-skill',            // single skill
+})
+
+const agent = new Agent({
+  provider,
+  skills: ['skill-a', 'skill-b'], // multiple skills
+})
+```
+
+Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Project skills override global skills with the same directory name.
 
 ## Max Iterations
 
@@ -160,7 +198,7 @@ interface RunResult {
 - **No confirmation prompts.** That's a CLI concern (the `--confirm` flag), not an agent concern. The agent always executes.
 - **No retries on API errors.** The provider can retry internally. The agent just surfaces the error.
 - **No streaming decisions.** Streaming is handled by the provider via `onText`. The agent doesn't know or care.
-- **No tool selection logic.** The agent passes all 4 tools to every LLM call. The model decides which to use.
+- **No tool selection logic.** The agent passes all 5 tools to every LLM call. The model decides which to use.
 - **No custom tools.** The toolset is fixed. Extend with skills, not tools.
 
 ## Relationship to Other Components
@@ -178,9 +216,14 @@ interface RunResult {
 │                                          │
 │  ┌─────────────┐    ┌─────────────────┐  │
 │  │  Provider   │    │  Tool Registry  │  │
-│  │  (LLM API)  │    │  (4 built-ins)  │  │
+│  │  (LLM API)  │    │  (5 built-ins)  │  │
 │  └─────────────┘    └─────────────────┘  │
+│                                          │
+│  ┌──────────────────────────────────────┐│
+│  │  Skills (auto-discovered or explicit)││
+│  │  (injected into system prompt)       ││
+│  └──────────────────────────────────────┘│
 └──────────────────────────────────────────┘
 ```
 
-The Provider translates to/from the LLM API. The Tool Registry maps names to handlers. The Agent orchestrates both. The CLI is just a thin wrapper that calls `agent.run()` and renders the output.
+The Provider translates to/from the LLM API. The Tool Registry maps names to handlers. Skills inject domain knowledge into the system prompt. The Agent orchestrates all three. The CLI is just a thin wrapper that calls `agent.run()` and renders the output.

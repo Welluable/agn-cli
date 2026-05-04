@@ -14,7 +14,8 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 - **Help and version flags** with `--help`, `-h`, `--version`, and `-v`.
 - **Programmatic API** exporting `Agent`, `OpenAIProvider`, and shared TypeScript types.
 - **Agent loop** that sends messages to a provider, executes requested tool calls, appends tool results, and repeats until the provider returns no tool calls or the max iteration count is reached.
-- **Built-in tools**: `read_file`, `write_file`, `patch`, and `shell`.
+- **Built-in tools**: `read_file`, `write_file`, `patch`, `shell`, and `read_skill`.
+- **Skills system** with auto-discovery and explicit loading from global (`~/.agn/skills/`) and project-level (`.agn/skills/`) directories.
 - **OpenAI chat completions provider** with streaming response handling and function/tool-call support.
 - **Terminal renderer hooks** that stream assistant text and print tool call/result summaries.
 - **Config resolution** from environment variables and `~/.agn/config.yml`.
@@ -26,7 +27,6 @@ Planned features and areas of exploration include:
 - **Additional providers**, starting with Anthropic support in the CLI/runtime path.
 - **Optional confirmation mode** for approving file writes, patches, and shell commands before they run.
 - **Sandbox mode** for executing tasks in an isolated disposable environment and reviewing a diff before applying changes.
-- **Skills** loaded from markdown files in global and project-level `.agn/skills/` directories to teach project conventions without a plugin system.
 - **Pipe/stdin mode** so prompts and input can be composed with standard Unix tools.
 - **Structured output** support for JSON-schema-like results that scripts can parse and branch on reliably.
 - **Improved orchestration examples** for CI, cron jobs, git hooks, migrations, and multi-step workflows.
@@ -177,6 +177,22 @@ interface RunResult {
 }
 ```
 
+### Agent options
+
+```ts
+interface AgentOptions {
+  provider: Provider
+  hooks?: AgentHooks
+  skills?: string | string[]
+}
+```
+
+| Option | Description |
+| --- | --- |
+| `provider` | An LLM provider implementing the `Provider` interface. |
+| `hooks` | Optional callbacks for observability (streaming, tool calls, iteration events). |
+| `skills` | Optional skill name(s) to pre-load into the system prompt. When omitted, the agent auto-discovers all available skills and builds an index the LLM can load at runtime via `read_skill`. |
+
 ### Agent hooks
 
 The `Agent` constructor accepts these optional hooks:
@@ -207,12 +223,13 @@ new OpenAIProvider({
 
 The core loop is implemented in `src/agent.ts`:
 
-1. Start a new message list with a fixed system prompt and the user prompt.
-2. Call `provider.chat(messages, DEFAULT_TOOLS, { onText })`.
-3. Append the assistant response to the message history.
-4. If the assistant requested tool calls, execute those tool calls.
-5. Append each tool result as a `tool` message.
-6. Repeat until no tool calls are returned, an error occurs, or `maxIterations` is reached.
+1. Build the system prompt: a base instruction plus a skills section (either an auto-discovered index or explicitly loaded skill content).
+2. Start a new message list with the system prompt and the user prompt.
+3. Call `provider.chat(messages, DEFAULT_TOOLS, { onText })`.
+4. Append the assistant response to the message history.
+5. If the assistant requested tool calls, execute those tool calls.
+6. Append each tool result as a `tool` message.
+7. Repeat until no tool calls are returned, an error occurs, or `maxIterations` is reached.
 
 Tool calls returned in the same assistant response are executed concurrently with `Promise.all`.
 
@@ -228,8 +245,60 @@ The default tool definitions and handlers are implemented in `src/tools.ts`.
 | `write_file` | `{ path, content }` | Creates parent directories as needed, writes UTF-8 content, overwrites existing files, and returns a byte-count message or error string. |
 | `patch` | `{ path, old_string, new_string }` | Reads a UTF-8 file, replaces the first exact occurrence of `old_string` with `new_string`, writes the updated file, and returns a status/error string. |
 | `shell` | `{ command }` | Runs `command` with Node's `child_process.exec` and returns stdout plus stderr, or the error message if there is no output. |
+| `read_skill` | `{ name }` | Loads a skill by name from the skills directories and returns the full content including supporting markdown files. |
 
-These are the tools used by both the CLI-created agent and the exported `Agent` class.
+The toolset is fixed — you can't pass in additional tools. The 5 tools are general enough to handle any task. The way to extend the agent is **skills**, not more tools.
+
+## Skills
+
+Skills are markdown files (`SKILL.md`) that provide domain-specific knowledge to the agent. They live in two directories:
+
+- **Global**: `~/.agn/skills/<skill-name>/SKILL.md` — available in every project
+- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global skills with the same directory name
+
+Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory are bundled automatically.
+
+### How skills work
+
+When `agn` runs, it scans both skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
+
+Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Project skills override global skills with the same directory name.
+
+### Creating a skill
+
+```
+~/.agn/skills/
+  my-skill/
+    SKILL.md
+    reference.md   # optional supporting file
+```
+
+```markdown
+---
+name: my-skill
+description: Knows how to do the specific thing
+---
+
+# My Skill
+
+Instructions for the agent...
+```
+
+### Explicit skill loading
+
+Pass skill names to the `Agent` constructor to pre-load them directly into the system prompt, bypassing auto-discovery:
+
+```ts
+const agent = new Agent({
+  provider,
+  skills: 'my-skill',              // single skill
+})
+
+const agent = new Agent({
+  provider,
+  skills: ['skill-a', 'skill-b'],  // multiple skills
+})
+```
 
 ## Provider interface
 
@@ -251,14 +320,16 @@ The included provider implementation is `OpenAIProvider` in `src/providers/opena
 
 ```text
 src/
-  agent.ts             Agent loop, run result, hooks
+  agent.ts             Agent loop, run result, hooks, skills integration
   cli.ts               Command-line entrypoint and argument parsing
   config.ts            Config file/env/default resolution
   init.ts              Interactive config writer
   providers/openai.ts  OpenAI provider implementation
   renderer.ts          Terminal rendering hooks
+  skills.ts            Skill discovery, loading, and index building
   tools.ts             Built-in tool definitions and handlers
   types.ts             Shared Provider/message/tool types
+  version.ts           Auto-generated version constant
   index.ts             Package exports
 
 docs/
@@ -316,7 +387,7 @@ OPENAI_API_KEY=sk-... npm run example -- examples/openai.ts
 ## Implemented limitations
 
 - The CLI can run only the OpenAI provider.
-- The built-in `Agent` uses the fixed default toolset from `src/tools.ts`.
+- The toolset is fixed at 5 built-in tools (`read_file`, `write_file`, `patch`, `shell`, `read_skill`). Custom tools cannot be added; extend with skills instead.
 - There is no confirmation prompt before file writes, patches, or shell commands.
 - There is no sandboxing around shell commands or filesystem access.
 - The CLI accepts a prompt as command-line arguments; it does not read prompt text from stdin.

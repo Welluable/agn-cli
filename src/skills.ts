@@ -185,7 +185,7 @@ export const buildSkillIndex = async (): Promise<string> => {
     }
 
     return [
-        'Available skills (use read_skill to load one):',
+        "You have skills available that provide domain-specific knowledge. Use read_skill to load a skill when it's relevant to the user's task.",
         ...skills.map(skill => {
             const name = skill.name ?? path.basename(path.dirname(skill.path));
             const description = trimDescription(skill.description ?? '');

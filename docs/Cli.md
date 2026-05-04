@@ -2,7 +2,7 @@
 
 Command-line interface for agn. One prompt in, one result out. Yolo.
 
-agn is a yolo coding agent. It runs a single task and exits — no confirmation prompts, no hand-holding. It plans, uses 4 tools (`read_file`, `write_file`, `patch`, `shell`), and reports the result. No conversation history, no sessions. The filesystem carries state between runs.
+agn is a yolo coding agent. It runs a single task and exits — no confirmation prompts, no hand-holding. It plans, uses 5 tools (`read_file`, `write_file`, `patch`, `shell`, `read_skill`), and reports the result. No conversation history, no sessions. The filesystem carries state between runs.
 
 ## Install
 
@@ -106,10 +106,13 @@ agn "kill whatever is running on port 3000"
 | Flag | Description |
 |---|---|
 | `--model <id>` | Override the default model for this run |
+| `--version`, `-v` | Show version and exit |
+| `--help`, `-h` | Show usage info and exit |
 
 ```bash
 agn "organize downloads by file type"
 agn --model gpt-4.1-mini "add a .gitignore for a Node project"
+agn --version
 ```
 
 ## Config Resolution
@@ -144,6 +147,43 @@ export AGN_MODEL=claude-sonnet-4-20250514
 ```
 
 Environment variables are useful for CI/CD where you don't want a config file, or when switching providers temporarily without modifying `~/.agn/config.yml`.
+
+## Skills
+
+Skills are markdown files that teach the agent domain-specific knowledge. They live in two directories:
+
+- **Global**: `~/.agn/skills/<skill-name>/SKILL.md` — available in every project
+- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global skills with the same directory name
+
+Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory are bundled automatically.
+
+### How it works
+
+When agn runs, it scans both skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
+
+### Creating a skill
+
+```
+~/.agn/skills/
+  my-skill/
+    SKILL.md
+    reference.md   # optional supporting file
+```
+
+```markdown
+---
+name: my-skill
+description: Knows how to do the specific thing
+---
+
+# My Skill
+
+Instructions for the agent...
+```
+
+### Skill resolution
+
+Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Project skills override global skills with the same directory name, so you can customize a global skill per-project.
 
 ## Examples
 
@@ -192,18 +232,23 @@ agn "check staged files for console.logs and hardcoded secrets"
 Import agn as a library for full control — conditionals, loops, parallelism, error handling.
 
 ```typescript
-import { Agent } from '@welluable/agn-cli'
+import { Agent, OpenAIProvider } from '@welluable/agn-cli'
 
-const agent = new Agent()
+const provider = new OpenAIProvider({
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: 'gpt-4.1',
+})
+
+const agent = new Agent({ provider })
 
 const schema = await agent.run("read the database schema and summarize it")
 
-await agent.run(`generate TypeScript types for: ${schema.summary}`)
+await agent.run(`generate TypeScript types for: ${schema.content}`)
 
 const tests = await agent.run("run the tests")
 
-if (!tests.passed) {
-  await agent.run(`fix the failing tests: ${tests.summary}`)
+if (tests.status !== 'done') {
+  await agent.run(`fix the failing tests: ${tests.content}`)
 }
 ```
 
@@ -215,6 +260,17 @@ const [types, docs, tests] = await Promise.all([
   agent.run("update the API documentation"),
   agent.run("write tests for the new endpoints"),
 ])
+```
+
+Pre-load skills for a specific domain:
+
+```typescript
+const agent = new Agent({
+  provider,
+  skills: ['prisma', 'testing'],
+})
+
+await agent.run("add a new user table with email and role fields")
 ```
 
 ---
@@ -238,7 +294,3 @@ Pass `--output` with a JSON schema. Force the agent's final response to match th
 ### Sandbox Mode (`--sandbox`)
 
 Run in a disposable Docker container. Show diff when done. Apply or discard. Requires Docker.
-
-### Skills
-
-Markdown files loaded into the system prompt from `~/.agn/skills/` (global) and `.agn/skills/` (project). Project skills override global ones. Teaches the agent domain knowledge without adding new tools.

@@ -47,7 +47,7 @@ export class Agent {
   private async buildSystemPrompt(): Promise<string> {
     const skillsContent = this.skills === undefined
       ? await buildSkillIndex()
-      : await loadExplicitSkills(this.skills)
+      : `You have skills available that provide domain-specific knowledge. These skills are already loaded don't use read_skill to load them again. ${await loadExplicitSkills(this.skills)}`
 
     return [SYSTEM_PROMPT, skillsContent]
       .filter(Boolean)
