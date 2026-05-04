@@ -1,5 +1,6 @@
 import type { Provider, Message, ChatResponse } from './types.js'
 import { DEFAULT_TOOLS, TOOL_HANDLERS } from './tools.js'
+import { buildSkillIndex, loadExplicitSkills } from './skills.js'
 
 const SYSTEM_PROMPT = `You are a helpful coding agent. Help the user with programming, code questions, and technical tasks.`
 
@@ -14,6 +15,7 @@ export interface AgentHooks {
 export interface AgentOptions {
   provider: Provider
   hooks?: AgentHooks
+  skills?: string | string[]
 }
 
 export interface RunResult {
@@ -34,10 +36,22 @@ function tryParseJson(str: string): Record<string, unknown> {
 export class Agent {
   private provider: Provider
   private hooks: AgentHooks
+  private skills?: string | string[]
 
   constructor(options: AgentOptions) {
     this.provider = options.provider
     this.hooks = options.hooks ?? {}
+    this.skills = options.skills
+  }
+
+  private async buildSystemPrompt(): Promise<string> {
+    const skillsContent = this.skills === undefined
+      ? await buildSkillIndex()
+      : await loadExplicitSkills(this.skills)
+
+    return [SYSTEM_PROMPT, skillsContent]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   async run(
@@ -45,8 +59,9 @@ export class Agent {
     options?: { maxIterations?: number }
   ): Promise<RunResult> {
     const maxIterations = options?.maxIterations ?? 30
+    const systemPrompt = await this.buildSystemPrompt()
     const messages: Message[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ]
 

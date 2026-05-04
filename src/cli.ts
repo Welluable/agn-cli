@@ -5,7 +5,7 @@ import { runInit } from './init.js'
 import { createRenderer } from './renderer.js'
 import { Agent } from './agent.js'
 import { OpenAIProvider } from './providers/openai.js'
-import { VERSION } from './index.js'
+import { VERSION } from './version.js'
 import chalk from 'chalk'
 
 function parseArgs(argv: string[]): { command: 'init' | 'run'; prompt: string; flags: { model?: string } } {

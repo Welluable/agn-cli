@@ -20,14 +20,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && chmod +x dist/cli.js",
+    "build": "node scripts/inject-version.cjs && tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "example": "tsx --env-file=.env",
     "prepublishOnly": "npm run build",
-    "publish": "./dist/cli.js 'bump the npm version and publish' ",
-    "push": "./dist/cli.js 'commit in detail andpush the latest version to the remote repository' "
+    "publish": "agn 'bump the npm version and publish' ",
+    "push": "agn 'commit with a detailed message about what changes and push the latest version to the remote repository' "
   },
   "keywords": [
     "ai",

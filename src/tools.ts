@@ -2,6 +2,7 @@ import type { ToolDefinition, ToolHandler } from './types.js'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { exec } from 'node:child_process'
+import { readSkill } from './skills.js'
 
 export const DEFAULT_TOOLS: ToolDefinition[] = [
   {
@@ -49,6 +50,17 @@ export const DEFAULT_TOOLS: ToolDefinition[] = [
         command: { type: 'string', description: 'The shell command to execute' },
       },
       required: ['command'],
+    },
+  },
+  {
+    name: 'read_skill',
+    description: 'Load a skill by name. Returns the full skill content, including supporting markdown files.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The skill name to load' },
+      },
+      required: ['name'],
     },
   },
 ]
@@ -101,9 +113,24 @@ async function handleShell(args: Record<string, unknown>): Promise<string> {
   })
 }
 
+async function handleReadSkill(args: Record<string, unknown>): Promise<string> {
+  const name = args.name as string
+
+  if (!name) {
+    return 'Error reading skill: name is required'
+  }
+
+  try {
+    return await readSkill(name)
+  } catch (err) {
+    return `Error reading skill: ${(err as Error).message}`
+  }
+}
+
 export const TOOL_HANDLERS: Record<string, ToolHandler> = {
   read_file: handleReadFile,
   write_file: handleWriteFile,
   patch: handlePatch,
   shell: handleShell,
+  read_skill: handleReadSkill,
 }
