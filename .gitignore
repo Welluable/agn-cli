@@ -1,3 +1,4 @@
+.plan
 node_modules/
 dist/
 *.tsbuildinfo
@@ -6,3 +7,4 @@ dist/
 .agn
 complex.md
 idea.md
+.usage.md

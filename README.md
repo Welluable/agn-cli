@@ -11,11 +11,11 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 - **Single-task CLI** with `agn "<prompt>"`.
 - **Interactive config setup** with `agn init`.
 - **Model override flag** with `--model <id>`.
-- **Help and version flags** with `--help`, `-h`, `--version`, and `-v`.
+- **Skill commands** for listing discovered skills and creating project/global skills.
 - **Programmatic API** exporting `Agent`, `OpenAIProvider`, and shared TypeScript types.
 - **Agent loop** that sends messages to a provider, executes requested tool calls, appends tool results, and repeats until the provider returns no tool calls or the max iteration count is reached.
 - **Built-in tools**: `read_file`, `write_file`, `patch`, `shell`, and `read_skill`.
-- **Skills system** with auto-discovery and explicit loading from global (`~/.agn/skills/`) and project-level (`.agn/skills/`) directories.
+- **Skills system** with internal skills, auto-discovery, and explicit loading from global (`~/.agn/skills/`) and project-level (`.agn/skills/`) directories.
 - **OpenAI chat completions provider** with streaming response handling and function/tool-call support.
 - **Terminal renderer hooks** that stream assistant text and print tool call/result summaries.
 - **Config resolution** from environment variables and `~/.agn/config.yml`.
@@ -65,20 +65,20 @@ Override the configured/default model for one run:
 agn --model gpt-4.1-mini "read package.json and explain the scripts"
 ```
 
-Show help or version:
+List discovered skills or create a new project skill:
 
 ```bash
-agn --help
-agn --version
+agn skills list
+agn skill new my-skill --description "Knows how to do X"
 ```
 
 ## CLI usage
 
 ```text
-agn [init] [--model <id>] "<prompt>"
-agn init
-agn --help
-agn --version
+agn [--model <id>] "<prompt>"
+agn [--model <id>] init
+agn [--model <id>] skills list
+agn [--model <id>] skill new <name> [--description "..."] [--global|--project]
 ```
 
 Examples:
@@ -91,6 +91,8 @@ agn "curl https://example.com/health and tell me the status"
 ```
 
 The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output.
+
+`agn skills list` prints a box table with discovered internal, global, and project skills. `agn skill new` runs the built-in `create-skill` skill through the agent loop to create a new skill under `.agn/skills/<name>/` by default, or under `~/.agn/skills/<name>/` with `--global`.
 
 Exit codes:
 
@@ -191,7 +193,7 @@ interface AgentOptions {
 | --- | --- |
 | `provider` | An LLM provider implementing the `Provider` interface. |
 | `hooks` | Optional callbacks for observability (streaming, tool calls, iteration events). |
-| `skills` | Optional skill name(s) to pre-load into the system prompt. When omitted, the agent auto-discovers all available skills and builds an index the LLM can load at runtime via `read_skill`. |
+| `skills` | Optional skill name(s) to pre-load into the system prompt. When omitted, the agent auto-discovers all available skills and builds an index the LLM can load at runtime via `read_skill`. When provided, the loaded skills are wrapped in mandatory instructions telling the model to follow them and not call `read_skill` for them. |
 
 ### Agent hooks
 
@@ -251,22 +253,37 @@ The toolset is fixed — you can't pass in additional tools. The 5 tools are gen
 
 ## Skills
 
-Skills are markdown files (`SKILL.md`) that provide domain-specific knowledge to the agent. They live in two directories:
+Skills are markdown files (`SKILL.md`) that provide domain-specific knowledge to the agent. They live in three locations:
 
+- **Internal**: bundled skills copied to `dist/skills/`, such as `create-skill`
 - **Global**: `~/.agn/skills/<skill-name>/SKILL.md` — available in every project
-- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global skills with the same directory name
+- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global and internal skills with the same directory name
 
-Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory are bundled automatically.
+Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory, including nested markdown files, are bundled automatically when the skill is loaded.
 
 ### How skills work
 
-When `agn` runs, it scans both skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
+When `agn` runs, it scans internal, global, and project skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
 
-Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Project skills override global skills with the same directory name.
+Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Precedence by directory name is internal < global < project.
 
 ### Creating a skill
 
+Use the CLI to create a project skill:
+
+```bash
+agn skill new my-skill --description "Knows how to do the specific thing"
 ```
+
+Create a global skill instead:
+
+```bash
+agn skill new my-skill --description "Knows how to do the specific thing" --global
+```
+
+Or create the files manually:
+
+```text
 ~/.agn/skills/
   my-skill/
     SKILL.md
@@ -286,7 +303,7 @@ Instructions for the agent...
 
 ### Explicit skill loading
 
-Pass skill names to the `Agent` constructor to pre-load them directly into the system prompt, bypassing auto-discovery:
+Pass skill names to the `Agent` constructor to pre-load them directly into the system prompt, bypassing auto-discovery. Explicitly loaded skills are mandatory instructions for that run; the system prompt tells the model to follow them and not call `read_skill` for them.
 
 ```ts
 const agent = new Agent({
@@ -299,6 +316,8 @@ const agent = new Agent({
   skills: ['skill-a', 'skill-b'],  // multiple skills
 })
 ```
+
+See [`docs/Skills.md`](docs/Skills.md) for the full skill file format, precedence rules, CLI commands, and environment overrides.
 
 ## Provider interface
 
@@ -336,6 +355,7 @@ docs/
   Agent.md
   Cli.md
   Provider.md
+  Skills.md
 
 examples/
   openai.ts            Programmatic OpenAI example
@@ -366,8 +386,8 @@ npm test
 Run the CLI locally after building:
 
 ```bash
-node dist/cli.js --help
 node dist/cli.js "list files in this repository"
+node dist/cli.js skills list
 ```
 
 Run the OpenAI example:
