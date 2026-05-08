@@ -47,7 +47,15 @@ export class Agent {
   private async buildSystemPrompt(): Promise<string> {
     const skillsContent = this.skills === undefined
       ? await buildSkillIndex()
-      : `You have skills available that provide domain-specific knowledge. These skills are already loaded don't use read_skill to load them again. ${await loadExplicitSkills(this.skills)}`
+      : [
+        '<mandatory_skill_instructions>',
+        'The following skill has been loaded for this task. You MUST follow its instructions exactly as written.',
+        'These are operational procedures, NOT reference material. Do NOT answer the user\'s question directly — instead, execute the steps defined in the skill.',
+        'Do NOT use read_skill — the skill is already loaded below.',
+        '',
+        await loadExplicitSkills(this.skills),
+        '</mandatory_skill_instructions>',
+      ].join('\n')
 
     return [SYSTEM_PROMPT, skillsContent]
       .filter(Boolean)

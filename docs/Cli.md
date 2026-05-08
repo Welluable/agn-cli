@@ -69,7 +69,52 @@ Run `agn init` again anytime to change any value.
 agn "find all TODO comments and list them by file"
 ```
 
-Before touching anything, the agent thinks out loud:
+### List skills
+
+Show discovered skills (internal/global/project, with project overriding global on name collisions):
+
+```
+agn skills list
+```
+
+Output is a compact list (one skill per line), e.g.:
+
+```
+create-skill  Create a skill file...
+prisma       Work with Prisma schemas...
+```
+
+### Create a new skill
+
+Scaffold a new skill directory with a `SKILL.md` file:
+
+```
+agn skill new my-skill --description "Knows how to do X" --project
+```
+
+Create it globally instead (in `~/.agn/skills/...`):
+
+```
+agn skill new my-skill --description "Knows how to do X" --global
+```
+
+Flags:
+
+- `--description "..."` optional description to include in the `SKILL.md` frontmatter
+- `--project` create under `.agn/skills/<name>/` (default)
+- `--global` create under `~/.agn/skills/<name>/`
+
+Skills are markdown files that teach the agent domain-specific knowledge. They live in three locations:
+
+- **Internal**: bundled with agn in `dist/skills/`, such as `create-skill`
+- **Global**: `~/.agn/skills/<skill-name>/SKILL.md` — available in every project
+- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global and internal skills with the same directory name
+
+Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory, including nested markdown files, are bundled automatically when the skill is loaded.
+
+### How it works
+
+When agn runs, it scans internal, global, and project skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
 
 ```
 PLAN:
@@ -106,13 +151,10 @@ agn "kill whatever is running on port 3000"
 | Flag | Description |
 |---|---|
 | `--model <id>` | Override the default model for this run |
-| `--version`, `-v` | Show version and exit |
-| `--help`, `-h` | Show usage info and exit |
 
 ```bash
 agn "organize downloads by file type"
 agn --model gpt-4.1-mini "add a .gitignore for a Node project"
-agn --version
 ```
 
 ## Config Resolution
@@ -150,16 +192,54 @@ Environment variables are useful for CI/CD where you don't want a config file, o
 
 ## Skills
 
-Skills are markdown files that teach the agent domain-specific knowledge. They live in two directories:
+Skills are markdown files that teach the agent domain-specific knowledge.
 
+### List skills
+
+Show discovered skills (internal/global/project, with project overriding global on name collisions):
+
+```bash
+agn skills list
+```
+
+Output is a compact list (one skill per line), e.g.:
+
+```text
+create-skill  Create a skill file...
+prisma       Work with Prisma schemas...
+```
+
+### Create a new skill
+
+Scaffold a new skill directory with a `SKILL.md` file:
+
+```bash
+agn skill new my-skill --description "Knows how to do X" --project
+```
+
+Create it globally instead (in `~/.agn/skills/...`):
+
+```bash
+agn skill new my-skill --description "Knows how to do X" --global
+```
+
+Flags:
+
+- `--description "..."` optional description to include in the `SKILL.md` frontmatter
+- `--project` create under `.agn/skills/<name>/` (default)
+- `--global` create under `~/.agn/skills/<name>/`
+
+Skills are markdown files that teach the agent domain-specific knowledge. They live in three locations:
+
+- **Internal**: bundled with agn in `dist/skills/`, such as `create-skill`
 - **Global**: `~/.agn/skills/<skill-name>/SKILL.md` — available in every project
-- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global skills with the same directory name
+- **Project**: `.agn/skills/<skill-name>/SKILL.md` — project-specific, overrides global and internal skills with the same directory name
 
-Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory are bundled automatically.
+Each skill directory contains a `SKILL.md` file with YAML frontmatter (`name`, `description`) and markdown content. Supporting `.md` files in the same directory, including nested markdown files, are bundled automatically when the skill is loaded.
 
 ### How it works
 
-When agn runs, it scans both skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
+When agn runs, it scans internal, global, and project skill directories and builds an index of available skills. The index is injected into the system prompt so the LLM knows what skills exist. The LLM can then load any skill at runtime using the `read_skill` tool.
 
 ### Creating a skill
 
@@ -183,7 +263,7 @@ Instructions for the agent...
 
 ### Skill resolution
 
-Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Project skills override global skills with the same directory name, so you can customize a global skill per-project.
+Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Precedence by directory name is internal < global < project, so you can customize a built-in or global skill per-project.
 
 ## Examples
 

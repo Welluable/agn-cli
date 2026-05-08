@@ -113,26 +113,26 @@ The way to extend the agent is **skills** — markdown files that teach the mode
 
 ## Skills
 
-Skills are markdown files (`SKILL.md`) that provide domain-specific knowledge to the agent. They live in two locations:
+Skills are markdown files (`SKILL.md`) that provide domain-specific knowledge to the agent. They live in three locations:
 
+- **Internal**: bundled with agn in `dist/skills/`, such as `create-skill`
 - **Global**: `~/.agn/skills/` — available in every project
-- **Project**: `.agn/skills/` — project-specific, overrides global skills with the same directory name
+- **Project**: `.agn/skills/` — project-specific, overrides global and internal skills with the same directory name
 
-Each skill has YAML frontmatter with `name` and `description`, followed by markdown content.
+Each skill has YAML frontmatter with `name` and `description`, followed by markdown content. Supporting `.md` files in the same directory, including nested markdown files, are bundled automatically when the skill is loaded.
 
 ### Auto-discovery (default)
 
-When no `skills` option is passed to the constructor, the agent auto-discovers all available skills and builds an index for the system prompt. The LLM sees a list of available skills with descriptions and can load any of them at runtime using `read_skill`.
+When no `skills` option is passed to the constructor, the agent auto-discovers all available skills from internal, global, and project directories and builds an index for the system prompt. The LLM sees a list of available skills with descriptions and can load any of them at runtime using `read_skill`.
 
 ```typescript
 const agent = new Agent({ provider })
-// System prompt includes: "Use read_skill to load a skill when it's relevant..."
-// followed by a list of discovered skills
+// System prompt includes: "You have skills available..." followed by a list of discovered skills
 ```
 
 ### Explicit loading
 
-Pass skill names to pre-load them directly into the system prompt. The LLM gets the full skill content upfront without needing to call `read_skill`.
+Pass skill names to pre-load them directly into the system prompt. The LLM gets the full skill content upfront without needing to call `read_skill`. Explicitly loaded skills are wrapped in mandatory instructions telling the model to follow them and not call `read_skill` for them.
 
 ```typescript
 const agent = new Agent({
@@ -146,7 +146,7 @@ const agent = new Agent({
 })
 ```
 
-Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Project skills override global skills with the same directory name.
+Skills are resolved by directory name or by the `name` field in the YAML frontmatter. Precedence by directory name is internal < global < project.
 
 ## Max Iterations
 

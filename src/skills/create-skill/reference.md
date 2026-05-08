@@ -53,12 +53,31 @@ The description is critical — it's the only thing the agent sees before decidi
 - Include trigger terms the user would naturally say
 - Be specific: "Use when the user mentions docker, containers, or compose" beats "Helps with containers"
 
-## typed 
+### Body best practices
+
+The body is what the agent follows after loading the skill. Weak body = weak enforcement.
+
+- Use imperative, constraint-based language: "You MUST", "NEVER", "ALWAYS" — not "You can", "Consider", "Try to"
+- Structure the body with a clear **Steps** (numbered, ordered) section for procedural skills, or a **Rules** (bullet list) section for convention skills
+- Include a **Constraints** section listing explicit anti-patterns ("NEVER do X", "Do NOT do Y")
+- Make instructions actionable and tool-specific where possible ("Use the shell tool to run...", "Write the file using write_file")
+- Avoid vague advice like "follow best practices" — spell out what those practices are
+- Each instruction should leave zero ambiguity about what the agent should do
+
+### Quality checklist
+
+Before writing a SKILL.md, verify:
+
+- [ ] Every instruction uses imperative verbs (Do, Use, Create, Run — not Consider, Try, Maybe)
+- [ ] There is at least one NEVER/DO NOT constraint
+- [ ] Steps are numbered and ordered (for procedural skills)
+- [ ] A model reading this would know exactly what tools to call and what outputs to produce
+- [ ] No vague phrases like "as appropriate", "if needed", "best practices"
 
 ### Global skills
 
-Global skills are skills that are available across all projects. They are stored in the ~/.agn/skills/ directory.
+Global skills are available across all projects. They are stored in the ~/.agn/skills/ directory.
 
 ### Project skills
 
-Project skills are skills that are scoped to the current project. They are stored in the .agn/skills/ directory.
+Project skills are scoped to the current project. They are stored in the .agn/skills/ directory.
