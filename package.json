@@ -20,7 +20,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "node scripts/inject-version.cjs && tsc && chmod +x dist/cli.js",
+    "build": "node scripts/inject-version.cjs && tsc && node scripts/copy-skills.cjs && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { existsSync } from 'node:fs';
 import { parse } from 'yaml';
+import { fileURLToPath } from 'node:url';
 
 export type SkillMeta = {
     name?: string;
@@ -19,31 +20,47 @@ export const getGlobalSkillDirectory = async () => {
     return globalSkillDirectory;
 }
 
-export const scanSkills = async () => {
-    const globalSkillDirectory = await getGlobalSkillDirectory();
-    const projectSkillDirectory = path.join(process.cwd(), '.agn', 'skills');
+export const getInternalSkillDirectory = async () => {
+    // When compiled, this module lives in dist/skills.js and internal skills are copied to dist/skills/**
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    return path.resolve(moduleDir, 'skills');
+}
 
-    const globalSkills = (await readdir(globalSkillDirectory))
-        .map(skill => path.join(globalSkillDirectory, skill));
+export const scanSkills = async () => {
+    const internalSkillDirectory = process.env.AGN_INTERNAL_SKILLS_DIR ?? await getInternalSkillDirectory();
+    const globalSkillDirectory = process.env.AGN_GLOBAL_SKILLS_DIR ?? await getGlobalSkillDirectory();
+    const projectSkillDirectory = process.env.AGN_PROJECT_SKILLS_DIR ?? path.join(process.cwd(), '.agn', 'skills');
+
+    const internalSkills = existsSync(internalSkillDirectory)
+        ? (await readdir(internalSkillDirectory)).map(skill => path.join(internalSkillDirectory, skill))
+        : [];
+
+    const globalSkills = existsSync(globalSkillDirectory)
+        ? (await readdir(globalSkillDirectory)).map(skill => path.join(globalSkillDirectory, skill))
+        : [];
+
     const projectSkills = existsSync(projectSkillDirectory)
-        ? (await readdir(projectSkillDirectory))
-            .map(skill => path.join(projectSkillDirectory, skill))
+        ? (await readdir(projectSkillDirectory)).map(skill => path.join(projectSkillDirectory, skill))
         : [];
 
     const mergedSkillsByDirname = new Map<string, string>();
+
+    // Precedence (lowest -> highest): internal < global < project
+    for (const skillPath of internalSkills) {
+        mergedSkillsByDirname.set(path.basename(skillPath), skillPath);
+    }
 
     for (const skillPath of globalSkills) {
         mergedSkillsByDirname.set(path.basename(skillPath), skillPath);
     }
 
     for (const skillPath of projectSkills) {
-        // Project skills overwrite global skills with the same directory name.
         mergedSkillsByDirname.set(path.basename(skillPath), skillPath);
     }
 
     const mergedSkills = [...mergedSkillsByDirname.values()];
 
-    return { globalSkills, projectSkills, mergedSkills };
+    return { internalSkills, globalSkills, projectSkills, mergedSkills };
 }
 
 export const extractSkillMeta = async (skillPath: string): Promise<SkillMeta> => {
@@ -185,7 +202,7 @@ export const buildSkillIndex = async (): Promise<string> => {
     }
 
     return [
-        "You have skills available that provide domain-specific knowledge. Use read_skill to load a skill when it's relevant to the user's task.",
+        "You have skills available that provide domain-specific knowledge. IMPORTANT: You MUST call read_skill BEFORE responding to any task that matches a skill below. Do NOT attempt to answer without first loading the relevant skill. Always err on the side of loading a skill if there's any possible match.",
         ...skills.map(skill => {
             const name = skill.name ?? path.basename(path.dirname(skill.path));
             const description = trimDescription(skill.description ?? '');
