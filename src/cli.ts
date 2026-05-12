@@ -9,6 +9,9 @@ import { VERSION } from './version.js'
 import { getAvailableSkills } from './skills.js'
 import chalk from 'chalk'
 import os from 'node:os'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import type { Message } from './types.js'
 
 // Extended parseArgs to support subcommands
 // The plan wants a type like this:
@@ -17,8 +20,10 @@ type Parsed =
   | { command: 'run'; prompt: string; flags: { model?: string; trace?: boolean } }
   | { command: 'skills_list'; flags: { model?: string; trace?: boolean } }
   | { command: 'skill_new'; name: string; description?: string; scope: 'global' | 'project'; flags: { model?: string; trace?: boolean } }
+  | { command: 'version' }
 
 export function parseArgs(argv: string[]): Parsed {
+  if (argv.includes('--version') || argv.includes('-v')) return { command: 'version' };
   const args = argv.slice(2)
   const flags: { model?: string; trace?: boolean } = {}
   let i = 0
@@ -94,6 +99,27 @@ function createProvider(provider: string, apiKey: string, model: string) {
   process.exit(1)
 }
 
+function formatTraceFile(messages: Message[], model: string, prompt: string): string {
+  return [
+    '```',
+    `Session ID: ${global.sessionId ?? ''}`,
+    `Model: ${model}`,
+    `Prompts: \`${prompt}\``,
+    '```',
+    '',
+    '## Messages & tool calls',
+    '',
+    '```JSON',
+    JSON.stringify(messages, null, 2),
+    '```',
+  ].join('\n')
+}
+
+async function writeTraceFile(tracePath: string, messages: Message[], model: string, prompt: string) {
+  await mkdir(dirname(tracePath), { recursive: true })
+  await writeFile(tracePath, formatTraceFile(messages, model, prompt), 'utf8')
+}
+
 import { generateSessionId } from './session.js'
 
 // SessionId logging for every CLI run
@@ -108,12 +134,17 @@ function logSessionId() {
 }
 
 async function main() {
+  const parsed = parseArgs(process.argv)
+  const { command } = parsed
+  
+  if (command === 'version') {
+    console.log(VERSION)
+    process.exit(0)
+  }
   const sessionId = await generateSessionId()
   // This lets the LLM know about the session ID in the user prompt system message:
   //   You can reference sessionId variable in prompt context if needed.
   global.sessionId = sessionId
-  const parsed = parseArgs(process.argv)
-  const { command } = parsed
 
   if (command === 'init') {
     await runInit()
@@ -216,14 +247,18 @@ async function main() {
   const renderer = createRenderer()
   const agent = new Agent({ provider, hooks: renderer })
 
+  const tracePath = `${os.homedir()}/.agn/traces/${global.sessionId}.md`
+
   if (parsed.flags.trace) {
-    const traceDir = `${os.homedir()}/.agn/traces`
-    const tracepath = `${traceDir}/${global.sessionId}.md`
-    console.log(chalk.blue(`Trace mode enabled. Tracepath: ${tracepath}`))
+    console.log(chalk.blue(`Trace mode enabled. Tracepath: ${tracePath}`))
   }
 
   // @ts-ignore
   const result = await agent.run(parsed.prompt)
+
+  if (parsed.flags.trace) {
+    await writeTraceFile(tracePath, result.messages, config.model, parsed.prompt)
+  }
 
   if (result.status === 'done') {
     console.log()

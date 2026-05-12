@@ -67,7 +67,11 @@ Run `agn init` again anytime to change any value.
 
 ```bash
 agn "find all TODO comments and list them by file"
+agn --version
+agn -v
 ```
+
+`agn --version` and `agn -v` print the package version and exit without creating a session ID.
 
 ### List skills
 
@@ -151,7 +155,7 @@ agn "kill whatever is running on port 3000"
 | Flag | Description |
 |---|---|
 | `--model <id>` | Override the default model for this run |
-| `--trace` | Print the trace path for the current prompt run under `~/.agn/traces/<session-id>.md`; the current implementation does not write trace contents |
+| `--trace` | Print the trace path for the current prompt run under `~/.agn/traces/<session-id>.md` and write a markdown trace containing run metadata plus the JSON message/tool-call history |
 
 ```bash
 agn "organize downloads by file type"
@@ -172,7 +176,7 @@ Example: config file says `model: gpt-4.1`, but you run `agn --model gpt-4.1-min
 
 ## Sessions
 
-Each CLI invocation generates a UUID session ID, writes it to a local `sessionId` file, and prints it as `Session ID: <id>` before exit on success or error paths. Prompt runs inject the same ID into the agent system prompt so the model can reference the run identifier.
+Each non-version CLI invocation generates an in-memory UUID session ID and prints it as `Session ID: <id>` before exit on success or error paths. Prompt runs inject the same ID into the agent system prompt so the model can reference the run identifier. `agn --version` and `agn -v` print the package version and exit without creating a session ID.
 
 When `--trace` is used on a prompt run, the CLI prints:
 
@@ -180,13 +184,13 @@ When `--trace` is used on a prompt run, the CLI prints:
 Trace mode enabled. Tracepath: ~/.agn/traces/<session-id>.md
 ```
 
-The current implementation reports the path only. It does not create the trace directory or write trace contents.
+After the prompt run finishes, the CLI creates the trace directory if needed and writes a markdown file at that path. The file contains a fenced metadata block, a `## Messages & tool calls` heading, and a fenced JSON dump of the messages returned by `agent.run()`.
 
 ## Exit Codes
 
 | Code | Meaning |
 |---|---|
-| `0` | Success — task completed |
+| `0` | Success — task completed or version printed |
 | `1` | Error — agent failed, config missing, API error, or user abort |
 
 ## Environment Variables

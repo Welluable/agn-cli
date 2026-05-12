@@ -10,8 +10,8 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 
 - **Single-task CLI** with `agn "<prompt>"`.
 - **Interactive config setup** with `agn init`.
-- **Model override flag** with `--model <id>` and trace-mode path reporting with `--trace`.
-- **Per-run session IDs** written to `sessionId`, printed at the end of CLI runs, and injected into the agent system prompt.
+- **Model override flag** with `--model <id>` and trace file writing with `--trace`.
+- **Per-run session IDs** printed at the end of CLI runs and injected into the agent system prompt.
 - **Skill commands** for listing discovered skills and creating project/global skills.
 - **Programmatic API** exporting `Agent`, `OpenAIProvider`, and shared TypeScript types.
 - **Agent loop** that sends messages to a provider, executes requested tool calls, appends tool results, and repeats until the provider returns no tool calls or the max iteration count is reached.
@@ -26,7 +26,7 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 Planned features and areas of exploration include:
 
 - **Additional providers**, starting with Anthropic support in the CLI/runtime path.
-- **Optional confirmation mode** for approving file writes, patches, and shell commands before they run.
+- **Review mode** for inspecting planned file writes, patches, and shell commands before applying them.
 - **Sandbox mode** for executing tasks in an isolated disposable environment and reviewing a diff before applying changes.
 - **Pipe/stdin mode** so prompts and input can be composed with standard Unix tools.
 - **Structured output** support for JSON-schema-like results that scripts can parse and branch on reliably.
@@ -77,6 +77,8 @@ agn skill new my-skill --description "Knows how to do X"
 
 ```text
 agn [--model <id>] [--trace] "<prompt>"
+agn --version
+agn -v
 agn [--model <id>] [--trace] init
 agn [--model <id>] [--trace] skills list
 agn [--model <id>] [--trace] skill new <name> [--description "..."] [--global|--project]
@@ -91,7 +93,7 @@ agn "read package.json and explain the available scripts"
 agn "curl https://example.com/health and tell me the status"
 ```
 
-The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output. Each CLI invocation generates a session ID, writes it to `sessionId`, and prints `Session ID: <id>` before exiting. Prompt runs also include the session ID in the agent system prompt. With `--trace`, prompt runs print the trace file path that corresponds to the current session ID under `~/.agn/traces/`; the current implementation reports the path but does not write trace contents.
+The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output. Each non-version CLI invocation generates an in-memory session ID and prints `Session ID: <id>` before exiting. Prompt runs also include the session ID in the agent system prompt. `agn --version` and `agn -v` print the package version and do not create a session ID. With `--trace`, prompt runs print the trace file path that corresponds to the current session ID under `~/.agn/traces/` and write a markdown trace file containing the run metadata block and JSON message/tool-call history.
 
 `agn skills list` prints a box table with discovered internal, global, and project skills. `agn skill new` runs the built-in `create-skill` skill through the agent loop to create a new skill under `.agn/skills/<name>/` by default, or under `~/.agn/skills/<name>/` with `--global`.
 
@@ -347,7 +349,7 @@ src/
   init.ts              Interactive config writer
   providers/openai.ts  OpenAI provider implementation
   renderer.ts          Terminal rendering hooks
-  session.ts           Per-run session ID generation and persistence
+  session.ts           In-memory per-run session ID generation
   skills.ts            Skill discovery, loading, and index building
   tools.ts             Built-in tool definitions and handlers
   types.ts             Shared Provider/message/tool types
@@ -414,7 +416,7 @@ OPENAI_API_KEY=sk-... npm run example -- examples/openai.ts
 - There is no confirmation prompt before file writes, patches, or shell commands.
 - There is no sandboxing around shell commands or filesystem access.
 - The CLI accepts a prompt as command-line arguments; it does not read prompt text from stdin.
-- `--trace` reports a trace path but does not write trace contents.
+- `--trace` writes trace files only for prompt runs, not for `init`, `skills list`, or `skill new`.
 - Each `agent.run()` call starts a new conversation.
 
 ## License

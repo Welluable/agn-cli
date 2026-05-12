@@ -197,7 +197,7 @@ interface RunResult {
 ## What the Agent Does NOT Do
 
 - **No conversation history between runs.** Each `run()` starts fresh. The filesystem is the state.
-- **No confirmation prompts.** That's a CLI concern (the `--confirm` flag), not an agent concern. The agent always executes.
+- **No confirmation prompts.** The agent always executes tool calls without asking for approval.
 - **No retries on API errors.** The provider can retry internally. The agent just surfaces the error.
 - **No streaming decisions.** Streaming is handled by the provider via `onText`. The agent doesn't know or care.
 - **No tool selection logic.** The agent passes all 5 tools to every LLM call. The model decides which to use.

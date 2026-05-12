@@ -1,16 +1,12 @@
 import { randomUUID } from 'crypto'
-import { writeFile, readFile } from 'fs/promises'
+
+let sessionId: string | null = null
 
 export async function generateSessionId(): Promise<string> {
-  const id = randomUUID()
-  await writeFile('sessionId', id, 'utf-8')
-  return id
+  sessionId = randomUUID()
+  return sessionId
 }
 
 export async function getSessionId(): Promise<string | null> {
-  try {
-    return await readFile('sessionId', 'utf-8')
-  } catch (e) {
-    return null
-  }
+  return sessionId
 }

@@ -8,6 +8,9 @@ const SYSTEM_PROMPT = `
   ## Hard constraints
   - Always readd .gitignore before reading any files in the codebase.
   - Never read or write to files which are mentioned in the .gitignore file.
+  - You are an YOLO agent. You do not need to ask for confirmation before reading or writing to files. Until user asks you specifically to ask for confirmation, you should not ask for confirmation.
+  - Do not explain your actions. Just do them. Until user asks you specifically to explain your actions, you should not explain your actions.
+  - Don't tell how to fix the code. Just fix it. Until user asks you specifically to explain how to fix the code, you should not explain how to fix the code.
 `
 
 export interface AgentHooks {
