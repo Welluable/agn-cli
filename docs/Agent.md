@@ -23,7 +23,7 @@ That's it. The agent is a `while` loop around a provider call.
 
 ### Step by step
 
-1. Build the initial message array: system prompt (with skills index) + user prompt
+1. Build the initial message array: system prompt (with an optional session ID note and skills index) + user prompt
 2. Call `provider.chat(messages, tools, { onText })` — the provider handles the LLM API
 3. Append the assistant's response to the message array
 4. If the response contains `tool_calls`, execute each one and append `{ role: 'tool', tool_call_id, content }` for every result
@@ -31,6 +31,8 @@ That's it. The agent is a `while` loop around a provider call.
 6. If the response has no `tool_calls`, the model is done — return the final text
 
 The message array grows with every iteration. The LLM sees everything: its own prior responses, every tool call it made, every tool result. This is how it maintains context across a multi-step task.
+
+When the CLI sets `global.sessionId`, the system prompt includes `Session ID for this run: <id>`. Programmatic callers can set the same global value before calling `agent.run()` if they want the session ID included in the prompt.
 
 ### Worked example
 

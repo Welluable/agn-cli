@@ -2,7 +2,7 @@
 
 Command-line interface for agn. One prompt in, one result out. Yolo.
 
-agn is a yolo coding agent. It runs a single task and exits — no confirmation prompts, no hand-holding. It plans, uses 5 tools (`read_file`, `write_file`, `patch`, `shell`, `read_skill`), and reports the result. No conversation history, no sessions. The filesystem carries state between runs.
+agn is a yolo coding agent. It runs a single task and exits — no confirmation prompts, no hand-holding. It plans, uses 5 tools (`read_file`, `write_file`, `patch`, `shell`, `read_skill`), and reports the result. No conversation history is carried between runs. Each CLI invocation gets a fresh session ID, and the filesystem carries state between runs.
 
 ## Install
 
@@ -151,10 +151,12 @@ agn "kill whatever is running on port 3000"
 | Flag | Description |
 |---|---|
 | `--model <id>` | Override the default model for this run |
+| `--trace` | Print the trace path for the current prompt run under `~/.agn/traces/<session-id>.md`; the current implementation does not write trace contents |
 
 ```bash
 agn "organize downloads by file type"
 agn --model gpt-4.1-mini "add a .gitignore for a Node project"
+agn --trace "run npm test and summarize the result"
 ```
 
 ## Config Resolution
@@ -166,7 +168,19 @@ When the same setting is specified in multiple places, highest priority wins:
 3. **Config file** (`~/.agn/config.yml`)
 4. **Defaults**
 
-Example: config file says `model: gpt-4.1`, but you run `agn --model gpt-4.1-mini "..."` — the flag wins, and this run uses `gpt-4.1-mini`. The config file is not modified.
+Example: config file says `model: gpt-4.1`, but you run `agn --model gpt-4.1-mini "..."` — the flag wins, and this run uses `gpt-4.1-mini`. The config file is not modified. Trace mode is controlled only by the `--trace` flag.
+
+## Sessions
+
+Each CLI invocation generates a UUID session ID, writes it to a local `sessionId` file, and prints it as `Session ID: <id>` before exit on success or error paths. Prompt runs inject the same ID into the agent system prompt so the model can reference the run identifier.
+
+When `--trace` is used on a prompt run, the CLI prints:
+
+```text
+Trace mode enabled. Tracepath: ~/.agn/traces/<session-id>.md
+```
+
+The current implementation reports the path only. It does not create the trace directory or write trace contents.
 
 ## Exit Codes
 

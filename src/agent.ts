@@ -2,7 +2,13 @@ import type { Provider, Message, ChatResponse } from './types.js'
 import { DEFAULT_TOOLS, TOOL_HANDLERS } from './tools.js'
 import { buildSkillIndex, loadExplicitSkills } from './skills.js'
 
-const SYSTEM_PROMPT = `You are a helpful coding agent. Help the user with programming, code questions, and technical tasks.`
+const SYSTEM_PROMPT = `
+  You are a helpful coding agent. Help the user with programming, code questions, and technical tasks.
+
+  ## Hard constraints
+  - Always readd .gitignore before reading any files in the codebase.
+  - Never read or write to files which are mentioned in the .gitignore file.
+`
 
 export interface AgentHooks {
   onToolCall?: (name: string, args: Record<string, unknown>) => void
@@ -25,6 +31,12 @@ export interface RunResult {
   messages: Message[]
 }
 
+declare global {
+  // Provided by injection in cli
+  // @ts-ignore
+  var sessionId: string | undefined
+}
+
 function tryParseJson(str: string): Record<string, unknown> {
   try {
     return JSON.parse(str)
@@ -45,6 +57,10 @@ export class Agent {
   }
 
   private async buildSystemPrompt(): Promise<string> {
+    let sessionNote = ''
+    if (typeof global.sessionId === 'string' && global.sessionId) {
+      sessionNote = `\n\nSession ID for this run: ${global.sessionId}`
+    }
     const skillsContent = this.skills === undefined
       ? await buildSkillIndex()
       : [
@@ -57,7 +73,7 @@ export class Agent {
         '</mandatory_skill_instructions>',
       ].join('\n')
 
-    return [SYSTEM_PROMPT, skillsContent]
+    return [SYSTEM_PROMPT, sessionNote, skillsContent]
       .filter(Boolean)
       .join('\n\n')
   }

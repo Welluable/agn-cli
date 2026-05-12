@@ -8,26 +8,30 @@ import { OpenAIProvider } from './providers/openai.js'
 import { VERSION } from './version.js'
 import { getAvailableSkills } from './skills.js'
 import chalk from 'chalk'
+import os from 'node:os'
 
 // Extended parseArgs to support subcommands
 // The plan wants a type like this:
 type Parsed =
-  | { command: 'init'; flags: { model?: string } }
-  | { command: 'run'; prompt: string; flags: { model?: string } }
-  | { command: 'skills_list'; flags: { model?: string } }
-  | { command: 'skill_new'; name: string; description?: string; scope: 'global' | 'project'; flags: { model?: string } }
+  | { command: 'init'; flags: { model?: string; trace?: boolean } }
+  | { command: 'run'; prompt: string; flags: { model?: string; trace?: boolean } }
+  | { command: 'skills_list'; flags: { model?: string; trace?: boolean } }
+  | { command: 'skill_new'; name: string; description?: string; scope: 'global' | 'project'; flags: { model?: string; trace?: boolean } }
 
 export function parseArgs(argv: string[]): Parsed {
   const args = argv.slice(2)
-  const flags: { model?: string } = {}
+  const flags: { model?: string; trace?: boolean } = {}
   let i = 0
   const next = () => args[i] || ''
 
-  // Recognize --model flag in any subcommand
+  // Recognize --model and --trace flags in any subcommand
   while (i < args.length) {
     if (args[i] === '--model' && i + 1 < args.length) {
       flags.model = args[i + 1]
       i += 2
+    } else if (args[i] === '--trace') {
+      flags.trace = true
+      i += 1
     } else {
       break
     }
@@ -41,6 +45,7 @@ export function parseArgs(argv: string[]): Parsed {
     const name = args[i + 2]
     if (!name) {
       console.error(chalk.red('Missing skill name.'))
+      logSessionId()
       process.exit(1)
     }
     // Parse --description, --global, --project
@@ -85,15 +90,34 @@ function createProvider(provider: string, apiKey: string, model: string) {
     return new OpenAIProvider({ apiKey, model })
   }
   console.error(chalk.red(`Provider "${provider}" is not implemented yet.`))
+  logSessionId()
   process.exit(1)
 }
 
+import { generateSessionId } from './session.js'
+
+// SessionId logging for every CLI run
+declare global {
+  // eslint-disable-next-line no-var
+  var sessionId: string | undefined
+}
+function logSessionId() {
+  if (global.sessionId) {
+    console.log(chalk.gray(`Session ID: ${global.sessionId}`))
+  }
+}
+
 async function main() {
+  const sessionId = await generateSessionId()
+  // This lets the LLM know about the session ID in the user prompt system message:
+  //   You can reference sessionId variable in prompt context if needed.
+  global.sessionId = sessionId
   const parsed = parseArgs(process.argv)
   const { command } = parsed
 
   if (command === 'init') {
     await runInit()
+    logSessionId()
     return
   }
 
@@ -155,6 +179,7 @@ async function main() {
     })
 
     console.log(bot)
+    logSessionId()
     return
   }
 
@@ -171,8 +196,10 @@ async function main() {
     ].filter(Boolean).join('\n')
     const result = await agent.run(basePrompt)
     if (result.status === 'done') {
+      logSessionId()
       process.exit(0)
     } else {
+      logSessionId()
       process.exit(1)
     }
   }
@@ -180,6 +207,7 @@ async function main() {
   if (command === 'run' && !parsed.prompt) {
     console.error(chalk.red('No prompt provided.'))
     console.error('Usage: agn "<prompt>" or agn init')
+    logSessionId()
     process.exit(1)
   }
   // legacy/normal single-prompt run
@@ -188,17 +216,26 @@ async function main() {
   const renderer = createRenderer()
   const agent = new Agent({ provider, hooks: renderer })
 
+  if (parsed.flags.trace) {
+    const traceDir = `${os.homedir()}/.agn/traces`
+    const tracepath = `${traceDir}/${global.sessionId}.md`
+    console.log(chalk.blue(`Trace mode enabled. Tracepath: ${tracepath}`))
+  }
+
   // @ts-ignore
   const result = await agent.run(parsed.prompt)
 
   if (result.status === 'done') {
     console.log()
+    logSessionId()
     process.exit(0)
   } else if (result.status === 'max_iterations') {
     console.error(chalk.yellow('\nReached max iterations.'))
+    logSessionId()
     process.exit(1)
   } else {
     console.error(chalk.red(`\nError: ${result.content}`))
+    logSessionId()
     process.exit(1)
   }
 }
@@ -212,6 +249,7 @@ const realSelf = fileURLToPath(import.meta.url)
 if (realArgv1 === realSelf) {
   main().catch((err) => {
     console.error(chalk.red(err.message))
+    logSessionId()
     process.exit(1)
   })
 }

@@ -10,7 +10,8 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 
 - **Single-task CLI** with `agn "<prompt>"`.
 - **Interactive config setup** with `agn init`.
-- **Model override flag** with `--model <id>`.
+- **Model override flag** with `--model <id>` and trace-mode path reporting with `--trace`.
+- **Per-run session IDs** written to `sessionId`, printed at the end of CLI runs, and injected into the agent system prompt.
 - **Skill commands** for listing discovered skills and creating project/global skills.
 - **Programmatic API** exporting `Agent`, `OpenAIProvider`, and shared TypeScript types.
 - **Agent loop** that sends messages to a provider, executes requested tool calls, appends tool results, and repeats until the provider returns no tool calls or the max iteration count is reached.
@@ -75,10 +76,10 @@ agn skill new my-skill --description "Knows how to do X"
 ## CLI usage
 
 ```text
-agn [--model <id>] "<prompt>"
-agn [--model <id>] init
-agn [--model <id>] skills list
-agn [--model <id>] skill new <name> [--description "..."] [--global|--project]
+agn [--model <id>] [--trace] "<prompt>"
+agn [--model <id>] [--trace] init
+agn [--model <id>] [--trace] skills list
+agn [--model <id>] [--trace] skill new <name> [--description "..."] [--global|--project]
 ```
 
 Examples:
@@ -90,7 +91,7 @@ agn "read package.json and explain the available scripts"
 agn "curl https://example.com/health and tell me the status"
 ```
 
-The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output.
+The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output. Each CLI invocation generates a session ID, writes it to `sessionId`, and prints `Session ID: <id>` before exiting. Prompt runs also include the session ID in the agent system prompt. With `--trace`, prompt runs print the trace file path that corresponds to the current session ID under `~/.agn/traces/`; the current implementation reports the path but does not write trace contents.
 
 `agn skills list` prints a box table with discovered internal, global, and project skills. `agn skill new` runs the built-in `create-skill` skill through the agent loop to create a new skill under `.agn/skills/<name>/` by default, or under `~/.agn/skills/<name>/` with `--global`.
 
@@ -131,6 +132,7 @@ Resolution order implemented by the CLI:
 | --- | --- |
 | Provider | `AGN_PROVIDER` → `~/.agn/config.yml` → `openai` |
 | Model | `--model` → `AGN_MODEL` → `~/.agn/config.yml` → `gpt-4.1` |
+| Trace mode | `--trace` flag only |
 | API key | `AGN_API_KEY` → `~/.agn/config.yml` |
 
 If no API key is resolved, the CLI exits with an error.
@@ -225,7 +227,7 @@ new OpenAIProvider({
 
 The core loop is implemented in `src/agent.ts`:
 
-1. Build the system prompt: a base instruction plus a skills section (either an auto-discovered index or explicitly loaded skill content).
+1. Build the system prompt: a base instruction, an optional session ID note when `global.sessionId` is set, and a skills section (either an auto-discovered index or explicitly loaded skill content).
 2. Start a new message list with the system prompt and the user prompt.
 3. Call `provider.chat(messages, DEFAULT_TOOLS, { onText })`.
 4. Append the assistant response to the message history.
@@ -345,6 +347,7 @@ src/
   init.ts              Interactive config writer
   providers/openai.ts  OpenAI provider implementation
   renderer.ts          Terminal rendering hooks
+  session.ts           Per-run session ID generation and persistence
   skills.ts            Skill discovery, loading, and index building
   tools.ts             Built-in tool definitions and handlers
   types.ts             Shared Provider/message/tool types
@@ -411,6 +414,7 @@ OPENAI_API_KEY=sk-... npm run example -- examples/openai.ts
 - There is no confirmation prompt before file writes, patches, or shell commands.
 - There is no sandboxing around shell commands or filesystem access.
 - The CLI accepts a prompt as command-line arguments; it does not read prompt text from stdin.
+- `--trace` reports a trace path but does not write trace contents.
 - Each `agent.run()` call starts a new conversation.
 
 ## License
