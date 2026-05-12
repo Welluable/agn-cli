@@ -203,7 +203,13 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+import { realpathSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const realArgv1 = realpathSync(process.argv[1])
+const realSelf = fileURLToPath(import.meta.url)
+
+if (realArgv1 === realSelf) {
   main().catch((err) => {
     console.error(chalk.red(err.message))
     process.exit(1)
