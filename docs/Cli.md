@@ -67,9 +67,16 @@ Run `agn init` again anytime to change any value.
 
 ```bash
 agn "find all TODO comments and list them by file"
+agn --help
+agn -h
 agn --version
 agn -v
 ```
+
+`agn --help` and `agn -h` print the full command reference with examples and
+exit without loading configuration, contacting a provider, or creating a
+session ID. Both flags are global, so forms such as `agn init --help` and
+`agn skill new --help` work too.
 
 `agn --version` and `agn -v` print the package version and exit without creating a session ID.
 
@@ -159,8 +166,14 @@ agn "kill whatever is running on port 3000"
 | `--stream-partial-output` | Emit assistant token deltas; valid only with `stream-json` |
 | `--model <id>` | Override the default model for this run |
 | `--trace` | Print the trace path for the current prompt run under `~/.agn/traces/<session-id>.md` and write a markdown trace containing run metadata plus the JSON message/tool-call history |
+| `--description <text>` | Set the description used by `skill new` |
+| `--global` | Create a global skill with `skill new` |
+| `--project` | Create a project skill with `skill new` (default) |
+| `-h`, `--help` | Print commands, options, examples, and exit |
+| `-v`, `--version` | Print the package version and exit |
 
 ```bash
+agn --help
 agn "organize downloads by file type"
 agn --model gpt-4.1-mini "add a .gitignore for a Node project"
 agn --trace "run npm test and summarize the result"

@@ -13,6 +13,8 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 - **Print and machine-readable output** with `-p`, `--output-format json`, and
   `--output-format stream-json`.
 - **Model override flag** with `--model <id>` and trace file writing with `--trace`.
+- **Built-in CLI help** with `agn -h` or `agn --help`, including commands,
+  options, and runnable examples.
 - **Per-run session IDs** printed at the end of CLI runs and injected into the agent system prompt.
 - **Skill commands** for listing discovered skills and creating project/global skills.
 - **Programmatic API** exporting `Agent`, `OpenAIProvider`, and shared TypeScript types.
@@ -79,6 +81,8 @@ agn skill new my-skill --description "Knows how to do X"
 
 ```text
 agn [-p|--print] [--output-format <text|json|stream-json>] [--stream-partial-output] [--model <id>] [--trace] "<prompt>"
+agn -h
+agn --help
 agn --version
 agn -v
 agn [--model <id>] [--trace] init
@@ -89,6 +93,7 @@ agn [--model <id>] [--trace] skill new <name> [--description "..."] [--global|--
 Examples:
 
 ```bash
+agn --help
 agn "rename all .jpeg files in this folder to .jpg"
 agn "run npm test and fix any failures"
 agn "read package.json and explain the available scripts"
@@ -98,6 +103,27 @@ agn -p --output-format stream-json "list files in src" | jq -c 'select(.type=="t
 agn -p --output-format stream-json --stream-partial-output "write a haiku" \
   | jq -rj 'select(.type=="assistant" and .subtype=="delta") | .delta'
 ```
+
+`-h` and `--help` are global: they print help and exit successfully when used
+on their own or with any command, such as `agn init --help` or
+`agn skill new --help`. The help output includes every command and option plus
+examples for prompt runs, structured output, and skill creation. Help does not
+load configuration, contact a provider, or create a session ID.
+
+Available options:
+
+| Option | Description |
+| --- | --- |
+| `-p`, `--print` | Run in non-interactive print mode. |
+| `--output-format <text\|json\|stream-json>` | Select text, one JSON result, or live NDJSON output. |
+| `--stream-partial-output` | Emit token deltas with `stream-json`. |
+| `--model <id>` | Override the configured model for this run. |
+| `--trace` | Write a prompt-run trace under `~/.agn/traces/`. |
+| `--description <text>` | Set the description used by `skill new`. |
+| `--global` | Create a global skill with `skill new`. |
+| `--project` | Create a project skill with `skill new` (the default). |
+| `-h`, `--help` | Print help and exit. |
+| `-v`, `--version` | Print the package version and exit. |
 
 The default `text` format streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output. `json` writes one terminal result object. `stream-json` writes NDJSON beginning with `system.init` and `user`, followed by live assistant/tool events and exactly one terminal `result`. `--stream-partial-output` replaces full assistant segments with token delta events and is ignored with a warning for other formats. Structured formats require print mode; it is inferred when stdout is not a TTY. Their stdout contains JSON only, while session IDs, trace notices, warnings, and errors are written to stderr.
 

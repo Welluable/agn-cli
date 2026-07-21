@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseArgs } from '../src/cli.js'
+import { HELP_TEXT, parseArgs } from '../src/cli.js'
 import { parseArgsOrExit } from './helpers.js'
 
 function runFlags(argv: string[]) {
@@ -118,5 +118,25 @@ describe('parseArgs — structured output flags', () => {
     expect(parsed.flags?.print).toBe(true)
     expect(parsed.flags?.outputFormat).toBe('json')
     expect(parsed.prompt).toBe('2+2?')
+  })
+})
+
+describe('parseArgs — help', () => {
+  it.each(['-h', '--help'])('recognizes %s', (flag) => {
+    expect(runFlags(['node', 'agn', flag])).toEqual({ command: 'help' })
+  })
+
+  it('recognizes help after a command', () => {
+    expect(runFlags(['node', 'agn', 'skill', 'new', 'testing', '--help'])).toEqual({
+      command: 'help',
+    })
+  })
+
+  it('documents commands, options, and runnable examples', () => {
+    expect(HELP_TEXT).toContain('Commands:')
+    expect(HELP_TEXT).toContain('-h, --help')
+    expect(HELP_TEXT).toContain('Examples:')
+    expect(HELP_TEXT).toContain('agn -p --output-format json "2+2?"')
+    expect(HELP_TEXT).toContain('agn skill new testing')
   })
 })

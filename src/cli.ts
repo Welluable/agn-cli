@@ -148,21 +148,44 @@ function logSessionId(stderr = false) {
   }
 }
 
-function printHelp() {
-  console.log(`Usage:
-  agn [flags] "<prompt>"
+export const HELP_TEXT = `Usage:
+  agn [options] "<prompt>"
   agn init
   agn skills list
   agn skill new <name> [--description "..."] [--global|--project]
+  agn --help
+  agn --version
 
-Flags:
+Commands:
+  init                          Configure the provider, API key, and default model
+  skills list                   List available internal, global, and project skills
+  skill new <name>              Create a project skill (use --global for global scope)
+
+Options:
   -p, --print                    Run in non-interactive print mode
   --output-format <format>       text, json, or stream-json (default: text)
-  --stream-partial-output       Emit token deltas with stream-json
+  --stream-partial-output        Emit token deltas with stream-json
   --model <id>                  Override the configured model
   --trace                       Write a trace file
-  -h, --help                    Show help
-  -v, --version                 Show version`)
+  --description <text>          Set the description for skill new
+  --global                      Create a global skill with skill new
+  --project                     Create a project skill with skill new (default)
+  -h, --help                    Show this help and exit
+  -v, --version                 Show the version and exit
+
+Examples:
+  agn "find all TODO comments and summarize them"
+  agn --model gpt-4.1-mini "explain package.json"
+  agn -p --output-format json "2+2?"
+  agn -p --output-format stream-json "list files in src"
+  agn skill new testing --description "Project testing conventions"
+  agn skill new release --description "Release workflow" --global
+
+Help:
+  -h and --help are global and may be used with any command.`
+
+function printHelp() {
+  console.log(HELP_TEXT)
 }
 
 function resultEvent(
