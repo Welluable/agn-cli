@@ -10,6 +10,8 @@ A small, inspectable coding agent for the terminal and for TypeScript/JavaScript
 
 - **Single-task CLI** with `agn "<prompt>"`.
 - **Interactive config setup** with `agn init`.
+- **Print and machine-readable output** with `-p`, `--output-format json`, and
+  `--output-format stream-json`.
 - **Model override flag** with `--model <id>` and trace file writing with `--trace`.
 - **Per-run session IDs** printed at the end of CLI runs and injected into the agent system prompt.
 - **Skill commands** for listing discovered skills and creating project/global skills.
@@ -76,7 +78,7 @@ agn skill new my-skill --description "Knows how to do X"
 ## CLI usage
 
 ```text
-agn [--model <id>] [--trace] "<prompt>"
+agn [-p|--print] [--output-format <text|json|stream-json>] [--stream-partial-output] [--model <id>] [--trace] "<prompt>"
 agn --version
 agn -v
 agn [--model <id>] [--trace] init
@@ -91,9 +93,15 @@ agn "rename all .jpeg files in this folder to .jpg"
 agn "run npm test and fix any failures"
 agn "read package.json and explain the available scripts"
 agn "curl https://example.com/health and tell me the status"
+agn -p --output-format json "2+2?" | jq .result
+agn -p --output-format stream-json "list files in src" | jq -c 'select(.type=="tool_call")'
+agn -p --output-format stream-json --stream-partial-output "write a haiku" \
+  | jq -rj 'select(.type=="assistant" and .subtype=="delta") | .delta'
 ```
 
-The CLI streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output. Each non-version CLI invocation generates an in-memory session ID and prints `Session ID: <id>` before exiting. Prompt runs also include the session ID in the agent system prompt. `agn --version` and `agn -v` print the package version and do not create a session ID. With `--trace`, prompt runs print the trace file path that corresponds to the current session ID under `~/.agn/traces/` and write a markdown trace file containing the run metadata block and JSON message/tool-call history.
+The default `text` format streams assistant text to stdout. When tools run, it prints a compact tool block with the tool name, a short argument summary, and up to 20 lines of tool output. `json` writes one terminal result object. `stream-json` writes NDJSON beginning with `system.init` and `user`, followed by live assistant/tool events and exactly one terminal `result`. `--stream-partial-output` replaces full assistant segments with token delta events and is ignored with a warning for other formats. Structured formats require print mode; it is inferred when stdout is not a TTY. Their stdout contains JSON only, while session IDs, trace notices, warnings, and errors are written to stderr.
+
+Each non-version CLI invocation generates an in-memory session ID. Prompt runs also include the session ID in the agent system prompt. `agn --version` and `agn -v` print the package version and do not create a session ID. With `--trace`, prompt runs report the trace file path corresponding to the current session ID under `~/.agn/traces/` and write a markdown trace file containing the run metadata block and JSON message/tool-call history.
 
 `agn skills list` prints a box table with discovered internal, global, and project skills. `agn skill new` runs the built-in `create-skill` skill through the agent loop to create a new skill under `.agn/skills/<name>/` by default, or under `~/.agn/skills/<name>/` with `--global`.
 
@@ -153,8 +161,11 @@ const agent = new Agent({
   }),
   hooks: {
     onText: (delta) => process.stdout.write(delta),
-    onToolCall: (name, args) => console.log('\nTool:', name, args),
-    onToolResult: (name, result) => console.log('\nResult:', name, result),
+    onAssistantMessage: ({ content, iteration }) =>
+      console.log('\nAssistant segment:', iteration, content),
+    onToolCall: ({ id, name, args }) => console.log('\nTool:', id, name, args),
+    onToolResult: ({ id, name, result }) =>
+      console.log('\nResult:', id, name, result),
   },
 })
 
@@ -205,8 +216,9 @@ The `Agent` constructor accepts these optional hooks:
 
 ```ts
 interface AgentHooks {
-  onToolCall?: (name: string, args: Record<string, unknown>) => void
-  onToolResult?: (name: string, result: string) => void
+  onToolCall?: (call: { id: string; name: string; args: Record<string, unknown> }) => void
+  onToolResult?: (call: { id: string; name: string; result: string }) => void
+  onAssistantMessage?: (message: { content: string; iteration: number }) => void
   onText?: (delta: string) => void
   onIterationStart?: (index: number) => void
   onIterationEnd?: (index: number) => void

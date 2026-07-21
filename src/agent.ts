@@ -14,8 +14,20 @@ const SYSTEM_PROMPT = `
 `
 
 export interface AgentHooks {
-  onToolCall?: (name: string, args: Record<string, unknown>) => void
-  onToolResult?: (name: string, result: string) => void
+  onToolCall?: (call: {
+    id: string
+    name: string
+    args: Record<string, unknown>
+  }) => void
+  onToolResult?: (call: {
+    id: string
+    name: string
+    result: string
+  }) => void
+  onAssistantMessage?: (message: {
+    content: string
+    iteration: number
+  }) => void
   onText?: (delta: string) => void
   onIterationStart?: (index: number) => void
   onIterationEnd?: (index: number) => void
@@ -121,6 +133,13 @@ export class Agent {
           : {}),
       })
 
+      if (response.content) {
+        this.hooks.onAssistantMessage?.({
+          content: response.content,
+          iteration: iterations,
+        })
+      }
+
       if (!response.tool_calls.length) {
         return {
           content: response.content,
@@ -132,7 +151,11 @@ export class Agent {
 
       const toolResults = await Promise.all(
         response.tool_calls.map(async (tc) => {
-          this.hooks.onToolCall?.(tc.name, tryParseJson(tc.arguments))
+          this.hooks.onToolCall?.({
+            id: tc.id,
+            name: tc.name,
+            args: tryParseJson(tc.arguments),
+          })
 
           let result: string
           try {
@@ -147,7 +170,11 @@ export class Agent {
             result = `Error: ${(err as Error).message}`
           }
 
-          this.hooks.onToolResult?.(tc.name, result)
+          this.hooks.onToolResult?.({
+            id: tc.id,
+            name: tc.name,
+            result,
+          })
           return { tool_call_id: tc.id, content: result }
         })
       )

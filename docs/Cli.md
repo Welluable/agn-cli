@@ -154,6 +154,9 @@ agn "kill whatever is running on port 3000"
 
 | Flag | Description |
 |---|---|
+| `-p`, `--print` | Use non-interactive print mode (inferred when stdout is not a TTY) |
+| `--output-format <text\|json\|stream-json>` | Select human text, one buffered result object, or live NDJSON |
+| `--stream-partial-output` | Emit assistant token deltas; valid only with `stream-json` |
 | `--model <id>` | Override the default model for this run |
 | `--trace` | Print the trace path for the current prompt run under `~/.agn/traces/<session-id>.md` and write a markdown trace containing run metadata plus the JSON message/tool-call history |
 
@@ -162,6 +165,27 @@ agn "organize downloads by file type"
 agn --model gpt-4.1-mini "add a .gitignore for a Node project"
 agn --trace "run npm test and summarize the result"
 ```
+
+## Structured output
+
+`--output-format json` writes exactly one `result` object. `stream-json` writes
+one JSON object per line: `system.init`, the `user` prompt, live assistant and
+tool-call events, and exactly one terminal `result`. Every event includes the
+session ID. Tool starts and completions share a `call_id`.
+
+```bash
+agn -p --output-format json "2+2?" | jq .result
+agn -p --output-format stream-json "list src" \
+  | jq -c 'select(.type == "tool_call")'
+agn -p --output-format stream-json --stream-partial-output "write a haiku" \
+  | jq -rj 'select(.type == "assistant" and .subtype == "delta") | .delta'
+```
+
+Structured stdout contains JSON only. Session IDs, trace notices, compatibility
+warnings, and human-readable errors go to stderr. Without
+`--stream-partial-output`, each complete assistant segment is emitted live before
+that segment's tool calls. Partial mode emits token-level `assistant.delta`
+events and suppresses the duplicate full segment.
 
 ## Config Resolution
 

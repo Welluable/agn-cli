@@ -3,6 +3,7 @@
 import { resolveConfig } from './config.js'
 import { runInit } from './init.js'
 import { createRenderer } from './renderer.js'
+import { createJsonRenderer, emitStreamEvent } from './renderer-json.js'
 import { Agent } from './agent.js'
 import { OpenAIProvider } from './providers/openai.js'
 import { VERSION } from './version.js'
@@ -11,60 +12,86 @@ import chalk from 'chalk'
 import os from 'node:os'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { Message } from './types.js'
+import type { Message, OutputFormat, StreamEvent } from './types.js'
 
-// Extended parseArgs to support subcommands
-// The plan wants a type like this:
+interface CommonFlags {
+  model?: string
+  trace?: boolean
+  print?: boolean
+  outputFormat?: OutputFormat
+  streamPartial?: boolean
+}
+
 type Parsed =
-  | { command: 'init'; flags: { model?: string; trace?: boolean } }
-  | { command: 'run'; prompt: string; flags: { model?: string; trace?: boolean } }
-  | { command: 'skills_list'; flags: { model?: string; trace?: boolean } }
-  | { command: 'skill_new'; name: string; description?: string; scope: 'global' | 'project'; flags: { model?: string; trace?: boolean } }
+  | { command: 'init'; flags: CommonFlags }
+  | { command: 'run'; prompt: string; flags: CommonFlags }
+  | { command: 'skills_list'; flags: CommonFlags }
+  | { command: 'skill_new'; name: string; description?: string; scope: 'global' | 'project'; flags: CommonFlags }
   | { command: 'version' }
+  | { command: 'help' }
+
+function argumentError(message: string): never {
+  console.error(chalk.red(message))
+  process.exit(1)
+}
 
 export function parseArgs(argv: string[]): Parsed {
-  if (argv.includes('--version') || argv.includes('-v')) return { command: 'version' };
   const args = argv.slice(2)
-  const flags: { model?: string; trace?: boolean } = {}
-  let i = 0
-  const next = () => args[i] || ''
+  if (args.includes('--version') || args.includes('-v')) return { command: 'version' }
+  if (args.includes('--help') || args.includes('-h')) return { command: 'help' }
 
-  // Recognize --model and --trace flags in any subcommand
-  while (i < args.length) {
-    if (args[i] === '--model' && i + 1 < args.length) {
-      flags.model = args[i + 1]
-      i += 2
-    } else if (args[i] === '--trace') {
+  const flags: CommonFlags = {}
+  const positional: string[] = []
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === '--model') {
+      if (!args[i + 1] || args[i + 1].startsWith('-')) {
+        argumentError('Missing value for --model.')
+      }
+      flags.model = args[++i]
+    } else if (arg === '--trace') {
       flags.trace = true
-      i += 1
+    } else if (arg === '-p' || arg === '--print') {
+      flags.print = true
+    } else if (arg === '--output-format') {
+      const value = args[++i]
+      if (!value || value.startsWith('-')) {
+        argumentError('Missing value for --output-format.')
+      }
+      if (!['text', 'json', 'stream-json'].includes(value)) {
+        argumentError(
+          `Invalid output format "${value}". Expected text, json, or stream-json.`,
+        )
+      }
+      flags.outputFormat = value as OutputFormat
+    } else if (arg === '--stream-partial-output') {
+      flags.streamPartial = true
     } else {
-      break
+      positional.push(arg)
     }
   }
 
-  if (args[i] === 'init') return { command: 'init', flags }
-  if (args[i] === 'skills' && args[i + 1] === 'list') {
+  if (positional[0] === 'init') return { command: 'init', flags }
+  if (positional[0] === 'skills' && positional[1] === 'list') {
     return { command: 'skills_list', flags }
   }
-  if (args[i] === 'skill' && args[i + 1] === 'new') {
-    const name = args[i + 2]
+  if (positional[0] === 'skill' && positional[1] === 'new') {
+    const name = positional[2]
     if (!name) {
-      console.error(chalk.red('Missing skill name.'))
-      logSessionId()
-      process.exit(1)
+      argumentError('Missing skill name.')
     }
-    // Parse --description, --global, --project
     let description: string | undefined = undefined
     let scope: 'global' | 'project' = 'project'
-    let j = i + 3
-    while (j < args.length) {
-      if (args[j] === '--description' && j + 1 < args.length) {
-        description = args[j + 1]
+    let j = 3
+    while (j < positional.length) {
+      if (positional[j] === '--description' && j + 1 < positional.length) {
+        description = positional[j + 1]
         j += 2
-      } else if (args[j] === '--global') {
+      } else if (positional[j] === '--global') {
         scope = 'global'
         j++
-      } else if (args[j] === '--project') {
+      } else if (positional[j] === '--project') {
         scope = 'project'
         j++
       } else {
@@ -73,19 +100,7 @@ export function parseArgs(argv: string[]): Parsed {
     }
     return { command: 'skill_new', name, description, scope, flags }
   }
-  // Fallback: prompt
-  // Scan for other flags and treat rest as raw prompt
-  let positional: string[] = []
-  for (; i < args.length; ++i) {
-    if (args[i].startsWith('--')) {
-      if (args[i] === '--model' && i + 1 < args.length) {
-        flags.model = args[++i]
-      }
-      // skip other flags for backward compat
-      continue
-    }
-    positional.push(args[i])
-  }
+
   const prompt = positional.join(' ')
   return { command: 'run', prompt, flags }
 }
@@ -94,9 +109,7 @@ function createProvider(provider: string, apiKey: string, model: string) {
   if (provider === 'openai') {
     return new OpenAIProvider({ apiKey, model })
   }
-  console.error(chalk.red(`Provider "${provider}" is not implemented yet.`))
-  logSessionId()
-  process.exit(1)
+  throw new Error(`Provider "${provider}" is not implemented yet.`)
 }
 
 function formatTraceFile(messages: Message[], model: string, prompt: string): string {
@@ -127,9 +140,62 @@ declare global {
   // eslint-disable-next-line no-var
   var sessionId: string | undefined
 }
-function logSessionId() {
+function logSessionId(stderr = false) {
   if (global.sessionId) {
-    console.log(chalk.gray(`Session ID: ${global.sessionId}`))
+    const message = chalk.gray(`Session ID: ${global.sessionId}`)
+    if (stderr) console.error(message)
+    else console.log(message)
+  }
+}
+
+function printHelp() {
+  console.log(`Usage:
+  agn [flags] "<prompt>"
+  agn init
+  agn skills list
+  agn skill new <name> [--description "..."] [--global|--project]
+
+Flags:
+  -p, --print                    Run in non-interactive print mode
+  --output-format <format>       text, json, or stream-json (default: text)
+  --stream-partial-output       Emit token deltas with stream-json
+  --model <id>                  Override the configured model
+  --trace                       Write a trace file
+  -h, --help                    Show help
+  -v, --version                 Show version`)
+}
+
+function resultEvent(
+  result: { content: string; iterations: number; status: 'done' | 'max_iterations' | 'error' },
+): StreamEvent {
+  const sessionId = global.sessionId ?? ''
+  if (result.status === 'done') {
+    return {
+      type: 'result',
+      subtype: 'success',
+      session_id: sessionId,
+      result: result.content,
+      iterations: result.iterations,
+      is_error: false,
+    }
+  }
+  if (result.status === 'max_iterations') {
+    return {
+      type: 'result',
+      subtype: 'max_iterations',
+      session_id: sessionId,
+      result: result.content,
+      iterations: result.iterations,
+      is_error: true,
+    }
+  }
+  return {
+    type: 'result',
+    subtype: 'error',
+    session_id: sessionId,
+    error: result.content,
+    iterations: result.iterations,
+    is_error: true,
   }
 }
 
@@ -139,6 +205,10 @@ async function main() {
   
   if (command === 'version') {
     console.log(VERSION)
+    process.exit(0)
+  }
+  if (command === 'help') {
+    printHelp()
     process.exit(0)
   }
   const sessionId = await generateSessionId()
@@ -236,41 +306,117 @@ async function main() {
   }
 
   if (command === 'run' && !parsed.prompt) {
-    console.error(chalk.red('No prompt provided.'))
-    console.error('Usage: agn "<prompt>" or agn init')
-    logSessionId()
+    const outputFormat = parsed.flags.outputFormat ?? 'text'
+    const structured = outputFormat !== 'text'
+    const message = 'No prompt provided.'
+    console.error(chalk.red(message))
+    console.error('Usage: agn [flags] "<prompt>" or agn init')
+    if (structured) {
+      emitStreamEvent({
+        type: 'result',
+        subtype: 'error',
+        session_id: global.sessionId ?? '',
+        error: message,
+        is_error: true,
+      })
+    }
+    logSessionId(structured)
     process.exit(1)
   }
-  // legacy/normal single-prompt run
-  const config = await resolveConfig(parsed.flags)
-  const provider = createProvider(config.provider, config.apiKey, config.model)
-  const renderer = createRenderer()
-  const agent = new Agent({ provider, hooks: renderer })
 
-  const tracePath = `${os.homedir()}/.agn/traces/${global.sessionId}.md`
+  const outputFormat = parsed.flags.outputFormat ?? 'text'
+  const structured = outputFormat !== 'text'
+  const printMode = parsed.flags.print || process.stdout.isTTY !== true
+  let terminalEmitted = false
 
-  if (parsed.flags.trace) {
-    console.log(chalk.blue(`Trace mode enabled. Tracepath: ${tracePath}`))
-  }
+  try {
+    if (structured && !printMode) {
+      throw new Error(
+        `${outputFormat} output requires -p/--print when stdout is a terminal.`,
+      )
+    }
 
-  // @ts-ignore
-  const result = await agent.run(parsed.prompt)
+    let streamPartial = parsed.flags.streamPartial ?? false
+    if (streamPartial && outputFormat !== 'stream-json') {
+      console.error(
+        chalk.yellow(
+          '--stream-partial-output is only valid with --output-format stream-json; ignoring it.',
+        ),
+      )
+      streamPartial = false
+    }
 
-  if (parsed.flags.trace) {
-    await writeTraceFile(tracePath, result.messages, config.model, parsed.prompt)
-  }
+    const config = await resolveConfig(parsed.flags)
+    const tracePath = `${os.homedir()}/.agn/traces/${global.sessionId}.md`
 
-  if (result.status === 'done') {
-    console.log()
-    logSessionId()
-    process.exit(0)
-  } else if (result.status === 'max_iterations') {
-    console.error(chalk.yellow('\nReached max iterations.'))
-    logSessionId()
-    process.exit(1)
-  } else {
-    console.error(chalk.red(`\nError: ${result.content}`))
-    logSessionId()
+    if (parsed.flags.trace) {
+      const traceMessage = chalk.blue(
+        `Trace mode enabled. Tracepath: ${tracePath}`,
+      )
+      if (structured) console.error(traceMessage)
+      else console.log(traceMessage)
+    }
+
+    if (outputFormat === 'stream-json') {
+      emitStreamEvent({
+        type: 'system',
+        subtype: 'init',
+        session_id: global.sessionId ?? '',
+        model: config.model,
+        cwd: process.cwd(),
+        version: VERSION,
+      })
+      emitStreamEvent({
+        type: 'user',
+        session_id: global.sessionId ?? '',
+        message: { role: 'user', content: parsed.prompt },
+      })
+    }
+
+    const provider = createProvider(config.provider, config.apiKey, config.model)
+    const hooks =
+      outputFormat === 'text'
+        ? createRenderer()
+        : outputFormat === 'stream-json'
+          ? createJsonRenderer({ partial: streamPartial })
+          : {}
+    const agent = new Agent({ provider, hooks })
+    const result = await agent.run(parsed.prompt)
+
+    if (parsed.flags.trace) {
+      await writeTraceFile(tracePath, result.messages, config.model, parsed.prompt)
+    }
+
+    if (structured) {
+      emitStreamEvent(resultEvent(result))
+      terminalEmitted = true
+      logSessionId(true)
+    } else if (result.status === 'done') {
+      console.log()
+      logSessionId()
+    } else if (result.status === 'max_iterations') {
+      console.error(chalk.yellow('\nReached max iterations.'))
+      logSessionId()
+    } else {
+      console.error(chalk.red(`\nError: ${result.content}`))
+      logSessionId()
+    }
+
+    process.exit(result.status === 'done' ? 0 : 1)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(chalk.red(message))
+    if (structured && !terminalEmitted) {
+      emitStreamEvent({
+        type: 'result',
+        subtype: 'error',
+        session_id: global.sessionId ?? '',
+        error: message,
+        is_error: true,
+      })
+      terminalEmitted = true
+    }
+    logSessionId(structured)
     process.exit(1)
   }
 }

@@ -26,12 +26,12 @@ export function createRenderer(): AgentHooks {
       process.stdout.write(delta)
     },
 
-    onToolCall(name: string, args: Record<string, unknown>) {
+    onToolCall({ name, args }) {
       const summary = formatToolArgs(name, args)
       console.log(`\n${chalk.cyan('┌─')} ${chalk.bold(name)}: ${summary}`)
     },
 
-    onToolResult(_name: string, result: string) {
+    onToolResult({ result }) {
       const truncated = truncateOutput(result)
       for (const line of truncated.split('\n')) {
         console.log(`${chalk.cyan('│')}  ${line}`)

@@ -25,7 +25,7 @@ That's it. The agent is a `while` loop around a provider call.
 
 1. Build the initial message array: system prompt (with an optional session ID note and skills index) + user prompt
 2. Call `provider.chat(messages, tools, { onText })` — the provider handles the LLM API
-3. Append the assistant's response to the message array
+3. Append the assistant's response to the message array and fire `onAssistantMessage`
 4. If the response contains `tool_calls`, execute each one and append `{ role: 'tool', tool_call_id, content }` for every result
 5. Go to step 2
 6. If the response has no `tool_calls`, the model is done — return the final text
@@ -166,13 +166,17 @@ The agent accepts optional callbacks for observability. These are for rendering 
 
 | Hook | Fires when |
 |---|---|
-| `onToolCall(name, args)` | A tool is about to be executed |
-| `onToolResult(name, result)` | A tool finished executing |
+| `onToolCall({ id, name, args })` | A tool is about to be executed |
+| `onToolResult({ id, name, result })` | A tool finished executing |
+| `onAssistantMessage({ content, iteration })` | A complete assistant segment is stored, before its tool calls |
 | `onText(delta)` | A text token streams from the LLM |
 | `onIterationStart(index)` | A new loop iteration begins |
 | `onIterationEnd(index)` | A loop iteration completes |
 
-The CLI uses these to render the tool call boxes you see in the terminal. The programmatic API can ignore them entirely.
+Tool hook callback signatures are object-shaped so callers can correlate concurrent
+start and completion events by `id`. The CLI uses these hooks for both terminal
+rendering and structured NDJSON output. The programmatic API can ignore them
+entirely.
 
 ## RunResult
 
